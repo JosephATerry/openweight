@@ -16,7 +16,7 @@ from export_huggingface_space import (
 )
 
 
-SPACE_ID = "josephterry/openweight"
+SPACE_ID = "josephaterry/openweight"
 COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 

@@ -250,6 +250,9 @@ def test_deployment_has_least_privilege_and_serialized_releases() -> None:
         "cancel-in-progress": True,
     }
     assert deploy["environment"]["name"] == "hugging-face-production"
+    assert deploy["environment"]["url"] == (
+        "https://josephaterry-openweight.hf.space"
+    )
     assert deploy["timeout-minutes"] == 15
     assert action_references
     assert all(SHA_PIN.fullmatch(reference) for reference in action_references)
@@ -266,8 +269,8 @@ def test_deployment_secret_is_isolated_to_upload_step() -> None:
     source = read(DEPLOY_WORKFLOW_PATH)
 
     assert len(secret_steps) == 1
-    assert secret_steps[0]["name"] == "Deploy export to josephterry/openweight"
+    assert secret_steps[0]["name"] == "Deploy export to josephaterry/openweight"
     assert source.count("secrets.HF_SPACE_DEPLOY_TOKEN") == 1
     assert "secrets.HF_TOKEN" not in source
     assert "/v1/agent/query" not in source
-    assert "josephterry/openweight" in source
+    assert "josephaterry/openweight" in source

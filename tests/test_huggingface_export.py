@@ -66,7 +66,7 @@ def test_deployment_command_is_fixed_and_contains_no_token(tmp_path: Path) -> No
     source_sha = "a" * 40
     command = deployer.build_upload_command(tmp_path / "space", source_sha)
 
-    assert command[:3] == ("hf", "upload", "josephterry/openweight")
+    assert command[:3] == ("hf", "upload", "josephaterry/openweight")
     assert "--repo-type" in command
     assert "space" in command
     assert "--delete" in command

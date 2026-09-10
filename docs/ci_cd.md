@@ -4,7 +4,9 @@ GitHub is the canonical engineering repository: it contains the application,
 tests, documentation, Docker configuration, and Azure reference architecture.
 The Hugging Face Space repository is a generated deployment artifact containing
 only the files needed to run the recruiter demo. Development does not occur in
-the Space repository.
+the Space repository. The intended GitHub repository is
+`JosephATerry/openweight`; its deployment destination is the distinct Hugging
+Face namespace `josephaterry/openweight`.
 
 The workflows are inert until this sanitized repository is published to
 GitHub and the deployment environment and secret described below are created.
@@ -52,7 +54,7 @@ hold:
 The deployment workflow does not consume artifacts or caches produced by
 untrusted pull-request code. It checks out the exact successful main commit,
 recreates the Space export from that trusted source, and synchronizes the
-export to `josephterry/openweight`. Deployment runs are serialized under one
+export to `josephaterry/openweight`. Deployment runs are serialized under one
 `hugging-face-production` concurrency group; a newer main deployment cancels
 an obsolete in-progress run.
 
@@ -68,7 +70,7 @@ HF_SPACE_DEPLOY_TOKEN
 ```
 
 It must be a separate Hugging Face fine-grained token with write access limited
-to the Space `josephterry/openweight`. Do not grant inference-provider or
+to the Space `josephaterry/openweight`. Do not grant inference-provider or
 account-administration permissions. Hugging Face's exact fine-grained controls
 can evolve; if repository-specific write access is not offered, use the
 narrowest write scope available and retain environment approval.
@@ -107,7 +109,7 @@ credentials, databases, Terraform state, and result artifacts do not enter the
 Space export.
 
 `scripts/deploy_huggingface_space.py` validates the export again, fixes the
-destination to `josephterry/openweight`, and gives the Space commit the source
+destination to `josephaterry/openweight`, and gives the Space commit the source
 GitHub SHA. `--delete '*'` makes the remote deployment tree match the current
 allowlist rather than retaining stale files. The script has a token-free
 `--dry-run` mode for command inspection.

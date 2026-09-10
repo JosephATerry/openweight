@@ -1,8 +1,9 @@
 # Hugging Face recruiter-demo profile
 
-D17A prepares, but does not publish, a zero-infrastructure Docker Space profile.
-It preserves the full local and production designs and makes the public-demo
-compromises explicit.
+D17A prepared the zero-infrastructure Docker Space profile while preserving the
+full local and production designs. The current public recruiter demo is
+`josephaterry/openweight` at
+`https://josephaterry-openweight.hf.space`.
 
 ## Three deployment postures
 
@@ -90,16 +91,16 @@ FastAPI process as a non-root user. A Space sets `OPENWEIGHT_API_PORT=7860`, so
 the SPA, `/v1/*`, `/mcp`, `/healthz`, and `/readyz` share one origin. Normal
 Compose continues to use port 8000 and PostgreSQL.
 
-The proposed Space metadata and variable names are in
+The Space metadata and variable names are in
 `deploy/huggingface/README.template.md`; the credential-free runtime example is
-`deploy/huggingface/env.example`. D17B must explicitly review current account
-settings and cost controls before creating anything.
+`deploy/huggingface/env.example`.
 
-Once the real Space hostname is known, set `OPENWEIGHT_HF_PUBLIC_ORIGIN` to its
-exact HTTPS origin. That setting rejects wildcards, localhost, credentials,
-ports, paths, queries, and fragments, and narrows both whole-application Host
-validation and MCP transport Host/Origin validation. It is intentionally blank
-for the loopback-only local smoke profile.
+The deployed profile sets `OPENWEIGHT_HF_PUBLIC_ORIGIN` to the exact canonical
+origin `https://josephaterry-openweight.hf.space`. That setting rejects
+wildcards, localhost, credentials, ports, paths, queries, and fragments, and
+narrows both whole-application Host validation and MCP transport Host/Origin
+validation. It is intentionally blank for the loopback-only local smoke
+profile.
 
 With no `HF_TOKEN`, the container remains alive and ready for retrieval,
 navigation, and the synthetic governance workflow. Service metadata reports

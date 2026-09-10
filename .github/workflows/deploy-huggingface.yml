@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: hugging-face-production
-      url: https://josephterry-openweight.hf.space
+      url: https://josephaterry-openweight.hf.space
     steps:
       - name: Check out the CI-validated revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -55,7 +55,7 @@ jobs:
       - name: Build deterministic Space export
         run: python scripts/export_huggingface_space.py --output "$RUNNER_TEMP/openweight-space"
 
-      - name: Deploy export to josephterry/openweight
+      - name: Deploy export to josephaterry/openweight
         env:
           HF_SPACE_DEPLOY_TOKEN: ${{ secrets.HF_SPACE_DEPLOY_TOKEN }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
