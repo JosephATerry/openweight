@@ -136,10 +136,12 @@ not telemetry attributes. Product error responses remain sanitized.
 
 Metrics are process-local. A restart resets counters, and multiple replicas
 need an external scraper/collector for aggregation. Traces are sampled/exported
-according to the later collector or hosting configuration; D10 does not add a
-cloud exporter account or Azure resource. Bearer tokens and claims are never
-telemetry attributes. Durable approval checkpoints are a separate PostgreSQL
-runtime concern and do not change these privacy rules.
+according to the configured collector or hosting environment; the application
+does not create a cloud exporter account or Azure resource. Bearer tokens and
+claims are never telemetry attributes. Durable approval checkpoints are a
+separate PostgreSQL runtime concern and do not change these privacy rules.
 
-Rate limiting, frontend, Hugging Face hosting, and live Azure deployment remain
-separate stages.
+The React frontend and public Hugging Face profile are deployed. That profile
+disables the public metrics route and applies separate bounded controls only to
+metered inference requests. Live Azure observability remains reference
+architecture; no Azure environment is deployed.

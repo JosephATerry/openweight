@@ -8,11 +8,12 @@ the later infrastructure-as-code stage, not evidence of a deployed system.
 No Azure resource, identity, credential, GitHub federation, or deployment is
 created by this design.
 
-D14 subsequently implemented the application-side PostgreSQL checkpoint,
-approval-session, transactional effect ledger, OIDC/JWT authorization, TLS,
-and parameterized CI-federation foundations described here. No live Azure or
-GitHub trust was created, and the reference deployment remains one replica
-until its real database bootstrap and multi-replica behavior are verified.
+The application-side PostgreSQL checkpoint, approval-session, transactional
+effect ledger, OIDC/JWT authorization, TLS, and parameterized Azure
+CI-federation foundations described here are implemented. The public GitHub
+repository and Hugging Face deployment are live, but no Azure trust or resource
+has been created. The Azure reference remains at one replica until its real
+database bootstrap and multi-replica behavior are verified.
 
 The design favors a realistic, reproducible portfolio deployment with bounded
 cost and operational complexity. Azure Container Apps is preferred over AKS:
@@ -48,13 +49,15 @@ introducing a parallel cloud-specific service:
   parameterized access-request status transition behind proposal validation,
   LangGraph interruption, and explicit approval. There is no arbitrary SQL,
   tool, or write route.
-- CI currently tests and builds the application but has no remote and performs
-  no deployment.
+- Public GitHub Actions tests and builds the application and deploys the
+  recruiter demo to Hugging Face after successful current-main CI. It performs
+  no Azure deployment.
 
 The reference stays at one API replica until live bootstrap/load validation,
 despite the shared durability implementation. An external model endpoint
-remains the practical cloud default: the 30B model must not be placed in the
-API container.
+remains the practical cloud default. GPT-OSS 20B is the primary/default model;
+Muse Glimmer 30B remains experimental. Neither model belongs in the CPU API
+container.
 
 ## Recommended Azure runtime architecture
 
@@ -76,9 +79,10 @@ environment-specific resource group:
 | Virtual network and subnets | Private database path | Separate Container Apps infrastructure and PostgreSQL delegated subnets |
 | PostgreSQL private DNS integration | Resolves the private database endpoint | Linked only to the required virtual network |
 
-No Redis, AKS cluster, MLflow server, bundled model server, frontend, API
-Management instance, Front Door profile, or permanent GPU is required for the
-initial reference architecture.
+No Redis, AKS cluster, MLflow server, bundled model server, separate frontend
+service, API Management instance, Front Door profile, or permanent GPU is
+required for the initial reference architecture. The compiled React frontend
+is served by the FastAPI container.
 
 ```mermaid
 flowchart LR
@@ -98,10 +102,10 @@ flowchart LR
 
 ### Container App
 
-Deploy one Container App for the API. A second application service is not
-justified until a frontend or separate inference service actually exists.
-The later frontend may be a static host or separate Container App and should
-consume the same versioned API contract; D12 does not choose or implement it.
+Deploy one Container App for the compiled React frontend and FastAPI service.
+A second application service is not justified unless inference or another
+independently scaled concern later requires it. The current one-origin product
+surface keeps `/v1/*`, `/mcp`, health, and frontend routes in the same image.
 
 The Container App contract is:
 
@@ -142,14 +146,12 @@ recommended flow.
 
 ## CI/CD trust and identity separation
 
-There is currently no Git remote. Future repository and environment names are
-therefore placeholders, not assumed facts:
+The canonical public repository is `JosephATerry/openweight`. Its implemented
+Hugging Face deployment uses a separate Trusted Publisher and does not grant
+Azure access. A future Azure deployment must configure its own reviewed branch
+or protected-environment trust against that repository.
 
-- repository subject: `<github-owner>/<github-repository>`;
-- protected environment: `<github-environment>`;
-- deployment branch/tag policy: defined when the remote and governance exist.
-
-The future deploy job should request `id-token: write` and `contents: read`,
+The Azure deploy job should request `id-token: write` and `contents: read`,
 exchange the GitHub OIDC token for a short-lived Microsoft Entra token, and use
 an environment-scoped federated credential. A long-lived
 `AZURE_CLIENT_SECRET` is not the preferred design.
@@ -194,11 +196,10 @@ Microsoft Entra authentication for PostgreSQL is a desirable later improvement,
 but the application would first need explicit token acquisition/renewal support;
 this design does not claim it already exists.
 
-The current database configuration also needs an explicit enforceable TLS
-connection-mode/CA contract before a production claim is made. D13 may
-provision the TLS-only server, but the application security stage must add and
-test the corresponding client setting (prefer certificate verification where
-the selected driver and Azure certificate chain allow it).
+Terraform configures a TLS-only server, and the application exposes an explicit
+PostgreSQL SSL mode and CA contract. Cloud configuration requires
+`sslmode=verify-full`; that path still must be exercised against the selected
+Azure certificate chain before a production claim is made.
 
 For pgvector, Terraform and the migration process must:
 
@@ -249,8 +250,8 @@ flowchart TB
     end
 ```
 
-The application integrates `PostgresSaver` and a separate D14-owned approval
-session/ledger schema. Merely provisioning PostgreSQL is still insufficient:
+The application integrates `PostgresSaver` and a separate application-owned
+approval session/ledger schema. Merely provisioning PostgreSQL is still insufficient:
 the migration/bootstrap command must run and the runtime role must hold the
 narrow required grants.
 
@@ -290,7 +291,7 @@ authorization mechanism for other writes.
 If private PostgreSQL networking is temporarily omitted to reduce deployment
 complexity, the only acceptable demo fallback is TLS plus narrowly scoped
 firewall access. It must not use an open `0.0.0.0/0` rule or be described as the
-production reference. The D13 default should remain the private-database
+production reference. The Terraform default remains the private-database
 topology.
 
 ### Endpoint exposure
@@ -361,7 +362,7 @@ Terraform outputs, or deployment diagnostics.
 
 ## Observability integration
 
-D10 remains the instrumentation layer:
+The application observability layer provides:
 
 - structured JSON stdout logs flow to Container Apps/Log Analytics;
 - OpenTelemetry spans cross HTTP, agent, backend, retrieval, fixed tool,
@@ -387,7 +388,8 @@ labels to control cost and privacy.
 
 ## Model inference boundary
 
-The API image and Container App do not host Muse-Glimmer-30B. Supported design
+The API image and Container App host neither the primary/default GPT-OSS 20B
+model nor the experimental Muse Glimmer 30B backend. Supported Azure design
 options are:
 
 | Option | Use | Trade-off |
@@ -397,11 +399,12 @@ options are:
 | Another configured provider/backend | Portable integration | Requires a tested backend adapter and contract-compatible structured output |
 | Local llama.cpp/model service | Development only | Useful locally; not an Azure production dependency |
 
-The recommended demo posture is an external, separately configured inference
-endpoint with credentials in Key Vault, provided it can serve the selected
-model/adapter and meet data-handling requirements. If it cannot, retain the
-backend abstraction and deploy inference separately; do not force a 30B model
-into the CPU API container. No permanent Azure GPU is justified by D12.
+The recommended Azure demo posture is an external, separately configured
+inference endpoint with credentials in Key Vault, provided it can serve the
+primary GPT-OSS 20B backend and meet data-handling requirements. If it cannot,
+retain the backend abstraction and deploy inference separately; do not force
+GPT-OSS or the experimental Muse Glimmer backend into the CPU API container.
+No permanent Azure GPU is justified by this reference architecture.
 
 ## Scaling and resiliency
 
@@ -472,7 +475,7 @@ Apply at least `project=openweight-platform`, `environment`,
 `managed-by=terraform`, `component`, and `purpose=portfolio-reference`. Avoid
 personal or sensitive identifiers.
 
-Terraform must accept `var.location`; D12 does not silently choose a region.
+Terraform accepts `var.location` and does not silently choose a region.
 Selection criteria are user proximity, Container Apps/PostgreSQL/pgvector
 availability, cost, quota, compliance/data residency, and latency to the chosen
 inference endpoint. Co-locate API, database, registry, Key Vault, and telemetry
@@ -503,7 +506,7 @@ Controls for the demo environment:
   documented data-retention policy.
 
 Exact prices are intentionally not asserted: service prices, regions, quotas,
-and free grants change. D13 should expose sizing variables; deployment review
+and free grants change. Terraform exposes sizing variables; deployment review
 must use the current Azure pricing calculator and subscription limits.
 
 ## Architecture decisions
@@ -518,17 +521,16 @@ must use the current Azure pricing calculator and subscription limits.
 | CI authentication | GitHub OIDC federation | Long-lived client secret | Short-lived credentials and environment/repository trust conditions | CI platform changes |
 | Runtime identity | Separate user-assigned managed identity | CI identity reuse, registry admin auth | Stable lifecycle and least-privilege ACR/Key Vault grants | Per-revision identity becomes necessary |
 | Observability | Existing OTel/logging boundary to Azure Monitor, Application Insights, and Log Analytics | Azure calls in business code, public `/metrics` | Portability, privacy allowlist, and local no-op operation | Managed Prometheus/private scrape is required |
-| Model inference | External or separately scaled backend | Bundle 30B model in API, permanent GPU | Keeps API image CPU-portable and avoids fixed GPU cost | Requirements justify dedicated inference infrastructure |
+| Model inference | External or separately scaled backend | Bundle GPT-OSS 20B or experimental Muse Glimmer 30B in API; permanent GPU | Keeps API image CPU-portable and avoids fixed GPU cost | Requirements justify dedicated inference infrastructure |
 | Current scaling | One always-on replica | Multiple replicas, scale-to-zero | Conservative until the durable path is bootstrapped and load-tested in Azure | Migration and multi-replica evidence supports expansion |
 | Checkpoints | PostgreSQL-backed LangGraph checkpointer plus idempotency ledger | Redis/new state service, InMemorySaver | Reuses managed PostgreSQL while separating checkpoint and effect guarantees | Load or availability objectives justify another store |
 | Product authentication | Configurable Entra-compatible OIDC/JWT validation at API boundary | No auth, custom tokens | Standard identity and bounded authorization seam | Product audience or hosting platform requires another provider |
 
-## D13 Terraform implementation contract
+## Terraform implementation contract
 
-D13 should implement the agreed architecture without changing application
-semantics. Suggested Terraform boundaries are `network`, `identity`, `registry`,
-`data`, `observability`, and `application`, whether expressed as modules or
-clearly grouped resources.
+The checked-in Terraform implements the agreed architecture without changing
+application semantics. Its resources are grouped into `network`, `identity`,
+`registry`, `data`, `observability`, and `application` concerns.
 
 Required input contract:
 
@@ -541,8 +543,9 @@ Required input contract:
   names, and pgvector enablement;
 - Log Analytics retention and telemetry sampling/cost controls;
 - ingress mode and allowed origins/access restrictions;
-- names/IDs for future GitHub OIDC subjects as placeholders, not fabricated
-  repository values.
+- names/IDs for Azure GitHub OIDC subjects supplied explicitly; the optional
+  Azure federation remains disabled until its complete trust contract is
+  reviewed.
 
 Sensitive values must come from a secure bootstrap path and be marked
 Terraform-sensitive; they must not be committed or emitted as ordinary outputs.
@@ -550,41 +553,42 @@ Useful non-secret outputs include the Container App FQDN, registry login server,
 managed identity IDs, Key Vault name, private PostgreSQL hostname, and
 observability resource names.
 
-D13 acceptance must include plan/static validation and cost/security review;
-resource creation remains a separately authorized action. Terraform state must
-use a later secured remote backend with locking and restricted access before
-team use. Local state, plans, and provider credentials must be ignored by Git.
+Any Azure deployment acceptance must include plan/static validation and
+cost/security review; resource creation remains a separately authorized action.
+Terraform state must use a secured remote backend with locking and restricted
+access before team use. Local state, plans, and provider credentials must be
+ignored by Git.
 
-## Later implementation mapping
+## Implemented application layers
 
-| Stage | Scope fixed by this architecture |
+| Layer | Current status |
 |---|---|
-| D13 | Terraform for resource group, network/private DNS, ACR, identities/RBAC, Key Vault, PostgreSQL, Log Analytics/Application Insights, Container Apps environment/app, variables, outputs, and safe state/bootstrap documentation |
-| D14 | Security and runtime hardening: GitHub/Entra identity trust when a repository exists, Key Vault wiring/rotation, enforced DB TLS, product authentication/authorization scope, durable PostgreSQL checkpoint plus idempotency-ledger design and implementation as authorized |
-| D15 | MCP 2026-07-28 surface that reuses authentication, authorization, observability, proposal/approval, and controlled-executor boundaries rather than bypassing them |
-| D16 | Professional React frontend as a separate deployable client/service using the stable API and future auth contract |
-| D17 | Recruiter-friendly Hugging Face Docker deployment reusing the portable image where platform constraints permit, clearly separated from the Azure reference architecture |
-| D18 | Final README, consolidated diagrams, runbooks, reproducible demo, and portfolio evidence polish |
+| Infrastructure as code | Terraform defines the Azure resources and validated configuration boundaries; it has not been applied. |
+| Security and durability | OIDC/JWT validation, database TLS settings, PostgreSQL approval sessions/checkpoints, and the transactional effect ledger are implemented. |
+| Interoperability | MCP 2026-07-28 reuses the same authorization, observability, approval, and controlled-executor boundaries. |
+| Product interface | The React frontend is compiled into and served by the FastAPI container. |
+| Recruiter deployment | The public Hugging Face Docker Space is live with synthetic evidence and ephemeral process-local action state. |
 
-No later stage may infer permission to deploy, create credentials, open the
-sealed model holdout, or resume model tuning.
+These implemented layers do not infer permission to provision Azure resources,
+create Azure credentials, or represent the public demo as production.
 
 ## Azure and Hugging Face roles
 
 Azure represents the production-style reference: managed database, private data
 network, managed identities, Key Vault, controlled revisions, and cloud
-observability. A later Hugging Face Docker Space is a recruiter-friendly public
-demo with different persistence, auth, resource, and inference constraints. The
-same API image and environment contract should be reused where practical, but a
-Space must not be described as equivalent to the Azure security architecture.
+observability. The deployed Hugging Face Docker Space is a recruiter-friendly
+public demo with different persistence, authentication, resource, and inference
+constraints. It uses the same product container boundary where practical, but
+the Space is not equivalent to the Azure security architecture.
 
-## Future MCP boundary
+## MCP boundary
 
-MCP support is not part of D12. A future MCP server must authenticate and
-authorize callers, emit the same privacy-safe observability, and route sensitive
-actions through deterministic validation, explicit approval, durable
-idempotency, and the controlled executor. It must never become a shortcut around
-the FastAPI-era security boundary.
+MCP 2026-07-28 is implemented as a bounded surface in the existing FastAPI
+process. When authentication is enabled it authorizes callers through the same
+application policy, emits the same privacy-safe observability, and routes
+sensitive actions through deterministic validation, explicit approval, durable
+idempotency, and the controlled executor. It is not a shortcut around the
+FastAPI security boundary.
 
 ## Limitations and prerequisites before a production claim
 
@@ -596,14 +600,15 @@ the FastAPI-era security boundary.
   exercised against an Azure server.
 - No Azure resources, OIDC trust, Key Vault wiring, private network, or remote
   Terraform state exists yet.
-- The external inference provider and its privacy/adapter support are not
-  selected.
+- The public demo uses GPT-OSS 20B through Hugging Face Inference Providers and
+  Groq; a provider and privacy contract for an Azure production deployment is
+  not selected.
 - `/metrics` is disabled in the Terraform cloud contract; a future internal
   scrape path remains optional.
 - Restore drills, capacity tests, threat modeling, alert tuning, and production
   runbooks have not occurred.
-- No model candidate passed the preregistered validation gate; cloud hosting
-  does not change that frozen model-quality conclusion.
+- GPT-OSS 20B remains the primary/default/reference backend. Muse Glimmer 30B
+  remains experimental and is not promoted by the Azure reference.
 
 ## Authoritative implementation references
 

@@ -32,8 +32,8 @@ MCP replacement.
   proposal creation is explicitly presented as non-executing.
 - **Approvals** requires a deliberate approve or reject confirmation. The UI
   waits for backend confirmation and handles conflicts without optimistic
-  claims; PostgreSQL checkpoints and the execution ledger remain the
-  exactly-once boundary.
+  claims. The public profile uses synthetic process-local state; PostgreSQL
+  checkpoints and the execution ledger remain the full durable boundary.
 - **System** truthfully diagrams React and MCP as two surfaces over the same
   FastAPI security, LangGraph, PostgreSQL/pgvector, and controlled-executor
   core. Azure architecture exists but is not deployed.
@@ -45,8 +45,8 @@ adapted for tablet and mobile widths.
 
 ## Versions and dependency policy
 
-Dependencies are exact-pinned and locked in `package-lock.json`. D16 uses
-React 19.2.8, React DOM 19.2.8, React Router DOM 7.18.3, TypeScript 6.0.3,
+Dependencies are exact-pinned and locked in `package-lock.json`. The frontend
+uses React 19.2.8, React DOM 19.2.8, React Router DOM 7.18.3, TypeScript 6.0.3,
 Vite 8.2.2, Vitest 4.1.11, Testing Library, ESLint, and Lucide React. The
 project requires Node 22.12 or newer; the container builder pins Node 22.23.2.
 TypeScript 6.0.3 is the newest stable release compatible with the selected
@@ -70,15 +70,17 @@ Only public browser configuration belongs in Vite variables:
 
 - `VITE_API_BASE_URL` optionally supplies a credential-free HTTP(S) API base
   URL. Same-origin is the default and the production recommendation.
-- `VITE_DEMO_MODE=true` shows the explicitly labelled local Demo Persona
-  selector. It changes interface affordances only; the server still validates
-  every bearer token and permission.
+- `VITE_DEMO_MODE=true` shows the explicitly labelled Demo Persona selector. It
+  changes interface affordances only and never grants server permissions.
+  In authenticated deployments, the server still validates every bearer token
+  and permission; the public profile separately uses synthetic state with
+  authentication disabled for the recruiter walkthrough.
 
 Never place signing keys, database credentials, Key Vault values, client
 secrets, or provider tokens in `VITE_*`: Vite embeds them in public assets.
 Bearer tokens are held only in module memory by the API client and are not
-written to `localStorage`. Production identity remains the D14 Microsoft
-Entra/OIDC seam; D16 does not add a fake password login.
+written to `localStorage`. Production identity remains the Microsoft Entra/OIDC
+seam; the frontend does not add a fake password login.
 
 ## Quality commands
 
@@ -116,9 +118,9 @@ leaves static delivery disabled unless explicitly set.
 
 FastAPI registers only the known SPA locations and `/assets`. It does not use
 a generic catch-all, so `/mcp`, `/v1/*`, `/healthz`, `/readyz`, `/metrics`,
-`/openapi.json`, and `/docs` remain independent routes. This one-container
-shape is the intended basis for the later Hugging Face Docker Space, but D16
-does not deploy it.
+`/openapi.json`, and `/docs` remain independent routes. The deployed Hugging
+Face Docker Space uses this one-container shape on port 7860; local Compose
+continues to use port 8000.
 
 ## Security boundary and limitations
 
@@ -141,7 +143,6 @@ result identifies the source scope as internal policy, asks the employee to
 review cited evidence, and renders insufficient evidence as a normal governed
 outcome. External web search is not an automatic fallback.
 
-Browser E2E automation is intentionally deferred if a suitable browser is not
-already available; component tests plus a real container/browserless smoke are
-the D16 automated boundary. D17 owns Hugging Face deployment and D18 owns the
-final portfolio README and demo polish.
+Browser E2E automation remains outside the default test boundary when a
+suitable browser is unavailable. Component tests and a real container smoke
+provide the repeatable automated coverage.

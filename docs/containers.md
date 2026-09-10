@@ -34,9 +34,9 @@ the loopback-published port. `POSTGRES_HOST_PORT` changes only the optional
 loopback host port for PostgreSQL.
 
 The image sets `OPENWEIGHT_API_HOST=0.0.0.0`, as required inside a container.
-Native D8 startup still defaults to `127.0.0.1`. A future hosting platform can
-inject its own host, port, database, backend, and build metadata without a Git
-checkout or WSL-specific path.
+Native startup still defaults to `127.0.0.1`. A hosting platform can inject its
+own host, port, database, backend, and build metadata without a Git checkout or
+WSL-specific path.
 
 ## Build and run
 
@@ -88,8 +88,8 @@ docker compose run --rm api python scripts/index_policy_corpus.py
 ```
 
 It uses deterministic policy chunk IDs and upserts into the existing pgvector
-store. D9 does not run this command, download the embedding model, or add a
-model-cache mount. A clean environment supports health, readiness, service
+store. Compose does not run this command, download the embedding model, or add
+a model-cache mount. A clean environment supports health, readiness, service
 metadata, and operations initialization without model execution; policy RAG
 queries require the separate indexing step.
 
@@ -133,17 +133,18 @@ not use global Docker prune commands for this project.
 
 The image contains no GPT-OSS or Muse weights. Backend selection remains an
 environment-driven application concern. A real agent query therefore requires
-a separately available backend and, for policy RAG, indexed embeddings. D9
-does not select the eventual public-demo inference provider.
+a separately available backend and, for policy RAG, indexed embeddings. The
+explicit Hugging Face profile selects the public remote provider separately
+from this local Compose posture.
 
 The HTTP layer is otherwise stateless and does not require a durable container
 filesystem. PostgreSQL is already addressed by hostname and can later become
-an external managed database. The configurable bind and port work with a
-future Hugging Face Docker host or Azure Container Apps revision, subject to
-their networking, secrets, and model-provider configuration.
+an external managed database. The configurable bind and port support the live
+Hugging Face Docker Space and the separate Azure Container Apps reference,
+subject to their different networking, secrets, state, and inference profiles.
 
 Local Compose defaults to the process-local memory checkpoint backend. Set up
-the D14 schema with `scripts/setup_security.py` and explicitly select
+the security schema with `scripts/setup_security.py` and explicitly select
 `OPENWEIGHT_CHECKPOINT_BACKEND=postgres` to exercise restart-durable LangGraph
 checkpoints, approval sessions, and transactional effect idempotency. There is
 no silent fallback if PostgreSQL durability is selected but unavailable.
@@ -160,5 +161,8 @@ no silent fallback if PostgreSQL durability is selected but unavailable.
   external/local backend; health and metadata endpoints intentionally do not
   load one.
 
-Live identity-provider registration, rate limits, Hugging Face deployment,
-and Azure provisioning remain separate later stages.
+Live enterprise identity-provider registration and Azure provisioning remain
+undeployed. The public Hugging Face profile is deployed with synthetic
+process-local state and bounded inference-specific rate/concurrency controls;
+those demo controls are not a substitute for production identity, durable
+storage, or an edge protection strategy.

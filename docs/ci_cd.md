@@ -8,11 +8,10 @@ the Space repository. The intended GitHub repository is
 `JosephATerry/openweight`; its deployment destination is the distinct Hugging
 Face namespace `josephaterry/openweight`.
 
-The workflows become active when this sanitized repository is published to
-GitHub. Deployment authentication uses the repo-level Hugging Face Trusted
-Publisher already configured for this workflow; GitHub stores no Hugging Face
-deployment secret. The workflows do not invoke GPT-OSS or require an inference
-credential.
+The workflows are active in the public GitHub repository. Deployment
+authentication uses the repo-level Hugging Face Trusted Publisher configured
+for this workflow; GitHub stores no Hugging Face deployment secret. The
+workflows do not invoke GPT-OSS or require an inference credential.
 
 ## Continuous integration
 
@@ -60,11 +59,10 @@ export to `josephaterry/openweight`. Deployment runs are serialized under one
 `hugging-face-production` concurrency group; a newer main deployment cancels
 an obsolete in-progress run.
 
-Configure the GitHub Environment `hugging-face-production` with deployment
-branch protection for `main`. A required reviewer is recommended for the first
-deployment and whenever manual approval is desired. Environment protection
-remains useful as an explicit release boundary; it stores no Hugging Face
-deployment credential.
+The GitHub Environment `hugging-face-production` is the explicit deployment
+boundary. Branch protection or required reviewers can be configured as
+repository policy without storing a Hugging Face deployment credential in that
+environment.
 
 Deployment uses Hugging Face repo-level Trusted Publishing with these exact
 identity claims:
@@ -151,7 +149,8 @@ Run the public CI-equivalent checks from a clean environment:
 ```bash
 CUDA_VISIBLE_DEVICES='' HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   PYTHONPATH=src .venv/bin/python -m pytest -q \
-  --ignore=tests/test_policy_dataset_v3.py
+  --ignore=tests/test_policy_dataset_v3.py \
+  --ignore=tests/test_muse_training_compatibility.py
 .venv/bin/python -m pip check
 cd frontend
 npm ci

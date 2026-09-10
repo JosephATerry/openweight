@@ -114,4 +114,8 @@ def test_frontend_documentation_states_the_security_and_demo_boundaries() -> Non
     assert "Never place signing keys" in documentation
     assert "module memory" in documentation
     assert "`localStorage`" in documentation
-    assert "D17 owns Hugging Face deployment" in documentation
+    assert "custom React and TypeScript single-page" in documentation
+    assert "deployed Hugging Face Docker Space" in " ".join(documentation.split())
+    assert "changes interface affordances only and never grants server permissions" in documentation
+    assert "public profile separately uses synthetic state" in documentation
+    assert "authentication disabled for the recruiter walkthrough" in documentation

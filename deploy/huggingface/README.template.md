@@ -10,9 +10,10 @@ pinned: false
 
 # OpenWeight recruiter demo
 
-This template is intended to become the root `README.md` only in a future,
-explicitly authorized Hugging Face Docker Space. D17A does not create or publish
-a Space.
+This template is exported as the root `README.md` for the public Docker Space
+[`josephaterry/openweight`](https://huggingface.co/spaces/josephaterry/openweight).
+The canonical engineering source remains
+[`JosephATerry/openweight`](https://github.com/JosephATerry/openweight).
 
 Configure the runtime secret named `HF_TOKEN` in Space settings. Never commit
 its value. Configure these public variables:
@@ -49,15 +50,14 @@ OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=true
 ```
 
 `VITE_DEMO_MODE` and `OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS` are build variables;
-the others are runtime variables. The exact Space-settings workflow must be
-reviewed during D17B before anything is published.
+the others are runtime variables configured in Space settings.
 
-After the Space hostname exists, set `OPENWEIGHT_HF_PUBLIC_ORIGIN` to that one
-exact HTTPS origin. The application then derives an exact whole-app Host rule
-and exact MCP Host/Origin rules from it. Wildcard or credential-bearing origins
-are rejected.
+Set `OPENWEIGHT_HF_PUBLIC_ORIGIN` to the one exact canonical origin,
+`https://josephaterry-openweight.hf.space`. The application then derives an
+exact whole-app Host rule and exact MCP Host/Origin rules from it. Wildcard or
+credential-bearing origins are rejected.
 
-The intended Space uses CPU hardware and Hugging Face Inference Providers. It
+The deployed Space uses CPU hardware and Hugging Face Inference Providers. It
 does not need a dedicated GPU, hosted PostgreSQL, or dedicated inference
 endpoint. Remote GPT-OSS requests are metered by the selected provider. This
 application sets a finite timeout and performs no application retries or

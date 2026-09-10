@@ -1,9 +1,9 @@
 # Service security and identity
 
-Stage D14 adds an application security boundary without requiring a live Azure
-tenant. Local development remains usable with authentication disabled; the
-Terraform cloud contract enables standards-based authentication and disables
-the public metrics route.
+OpenWeight provides an application security boundary without requiring a live
+Azure tenant. Local development remains usable with authentication disabled;
+the Terraform cloud contract enables standards-based authentication and
+disables the public metrics route.
 
 ## Product authentication and authorization
 
@@ -65,9 +65,9 @@ Terraform defines separate user-assigned identities:
 - CI identity: `AcrPush` on the stack registry and `Container Apps Contributor`
   scoped to the one API Container App.
 
-The optional GitHub federated credential is disabled until a real repository
-owner/name and branch or protected environment are supplied. Its trust flow is
-GitHub OIDC to Microsoft Entra ID with audience
+The optional Azure GitHub federated credential remains disabled until an Azure
+deployment supplies reviewed repository, branch, or protected-environment trust
+values. Its trust flow is GitHub OIDC to Microsoft Entra ID with audience
 `api://AzureADTokenExchange`; no `AZURE_CLIENT_SECRET` is designed or stored.
 The runtime identity receives no push/deployment permission, and the CI
 identity receives no Key Vault secret-read or database-data permission.
@@ -91,7 +91,7 @@ validation unless `sslmode=verify-full`; Terraform supplies `verify-full` with
 the system trust roots. Compose keeps `prefer` for local ergonomics.
 
 `scripts/setup_security.py` is an administrator/migration command. It creates
-LangGraph checkpoint tables and the D14 security tables. If an existing
+LangGraph checkpoint tables and the application security tables. If an existing
 `POSTGRES_APPLICATION_ROLE` is supplied, it grants only connect/schema usage,
 required reads, the one `approval_status` column update, security-ledger DML,
 checkpoint DML, and policy-vector reads. It does not create a role or password.
@@ -103,8 +103,9 @@ environment.
 
 ## Remaining security work
 
-No live tenant trust, repository federation, secret payload, rate limiting,
-WAF/private metrics path, Entra PostgreSQL token auth, or Azure deployment is
-performed in D14. Those require real environment identifiers, credentials, and
-separate authorization. The LLM remains a proposal component, never the
-security boundary.
+No live enterprise tenant trust, Azure secret payload, WAF/private metrics
+path, Entra PostgreSQL token authentication, or Azure deployment is configured.
+The explicit public Hugging Face profile adds bounded inference concurrency and
+per-client rate controls, but it intentionally uses simulated personas and
+synthetic process-local state rather than production identity or durability.
+The LLM remains a proposal component, never the security boundary.

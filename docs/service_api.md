@@ -182,9 +182,11 @@ controlled database effect. See `docs/approval_durability.md`.
 Product routes can require RS256 OIDC/JWT authentication with bounded query,
 proposal, approval, and metrics permissions. See `docs/security.md`.
 
-## Deliberately deferred
+## Deployment-specific boundaries
 
-The service does not add a reverse proxy/WAF, rate limits, a
-Prometheus/Grafana deployment, live tenant federation, or cloud deployment.
-The API binds to loopback in the canonical local command. Those controls remain
-separate authorized stages.
+The core service does not add a reverse proxy/WAF, a Prometheus/Grafana
+deployment, or live enterprise tenant federation. The canonical local command
+binds to loopback. The deployed public Hugging Face profile adds bounded
+controls only around metered inference and uses synthetic process-local state
+with authentication disabled; it is not the production security or durability
+posture. Azure remains a Terraform reference architecture and is not deployed.
