@@ -17,6 +17,7 @@ from export_huggingface_space import (
 
 
 SPACE_ID = "josephaterry/openweight"
+OIDC_RESOURCE = "spaces/josephaterry/openweight"
 COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -38,17 +39,15 @@ def build_upload_command(export_dir: Path, source_sha: str) -> tuple[str, ...]:
     )
 
 
-def deploy(export_dir: Path, source_sha: str, token: str) -> None:
-    if not token.strip():
-        raise ValueError("HF_SPACE_DEPLOY_TOKEN is required")
+def deploy(export_dir: Path, source_sha: str) -> None:
+    if os.environ.get("HF_OIDC_RESOURCE") != OIDC_RESOURCE:
+        raise ValueError(
+            "HF_OIDC_RESOURCE must identify the configured destination Space"
+        )
     validate_export(export_dir.resolve(), collect_export_entries())
-    environment = os.environ.copy()
-    environment.pop("HF_SPACE_DEPLOY_TOKEN", None)
-    environment["HF_TOKEN"] = token
     subprocess.run(
         build_upload_command(export_dir, source_sha),
         check=True,
-        env=environment,
     )
 
 
@@ -73,10 +72,7 @@ def main() -> int:
         print(shlex.join(command))
         return 0
 
-    token = os.environ.get("HF_SPACE_DEPLOY_TOKEN", "")
-    if not token:
-        raise SystemExit("HF_SPACE_DEPLOY_TOKEN is not configured")
-    deploy(export_dir, args.source_sha, token)
+    deploy(export_dir, args.source_sha)
     return 0
 
 

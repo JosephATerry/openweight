@@ -8,9 +8,11 @@ the Space repository. The intended GitHub repository is
 `JosephATerry/openweight`; its deployment destination is the distinct Hugging
 Face namespace `josephaterry/openweight`.
 
-The workflows are inert until this sanitized repository is published to
-GitHub and the deployment environment and secret described below are created.
-They do not invoke GPT-OSS or require an inference credential.
+The workflows become active when this sanitized repository is published to
+GitHub. Deployment authentication uses the repo-level Hugging Face Trusted
+Publisher already configured for this workflow; GitHub stores no Hugging Face
+deployment secret. The workflows do not invoke GPT-OSS or require an inference
+credential.
 
 ## Continuous integration
 
@@ -61,31 +63,33 @@ an obsolete in-progress run.
 Configure the GitHub Environment `hugging-face-production` with deployment
 branch protection for `main`. A required reviewer is recommended for the first
 deployment and whenever manual approval is desired. Environment protection
-must complete before its secret is made available to the deploy job.
+remains useful as an explicit release boundary; it stores no Hugging Face
+deployment credential.
 
-The only deployment credential is the GitHub Actions environment secret named:
+Deployment uses Hugging Face repo-level Trusted Publishing with these exact
+identity claims:
 
 ```text
-HF_SPACE_DEPLOY_TOKEN
+provider: GitHub Actions
+repository: JosephATerry/openweight
+ref: refs/heads/main
+workflow: deploy-huggingface.yml
+resource: spaces/josephaterry/openweight
 ```
 
-It must be a separate Hugging Face fine-grained token with write access limited
-to the Space `josephaterry/openweight`. Do not grant inference-provider or
-account-administration permissions. Hugging Face's exact fine-grained controls
-can evolve; if repository-specific write access is not offered, use the
-narrowest write scope available and retain environment approval.
+The deployment job grants `contents: read` and `id-token: write`. During the
+upload step, `HF_OIDC_RESOURCE=spaces/josephaterry/openweight` instructs
+`huggingface_hub==1.27.0` to obtain a GitHub OIDC identity token, exchange it
+with Hugging Face, and use the returned short-lived token directly for the
+upload. Hugging Face verifies the repository, ref, and workflow claims against
+the configured publisher. The resulting token is scoped to this Space and
+expires after approximately one hour; it is not printed, stored, or exported by
+the workflow.
 
-`HF_SPACE_DEPLOY_TOKEN` is not the Space runtime secret `HF_TOKEN`.
-
-- `HF_SPACE_DEPLOY_TOKEN` exists only in the GitHub deployment environment and
-  writes the generated Space repository.
-- `HF_TOKEN` exists only in Hugging Face Space settings and authorizes runtime
-  inference.
-
-The workflow exposes the deploy token to only the upload step. The deployment
-wrapper maps it to the `HF_TOKEN` environment name expected by the Hugging Face
-CLI subprocess without placing it in arguments or output. Frontend builds and
-CI jobs receive neither credential.
+The live Space's runtime `HF_TOKEN` remains a separate inference-only secret in
+Hugging Face settings. It is never exposed to GitHub Actions. A repo-level
+Trusted Publisher token writes only its configured repository and cannot call
+Inference Providers.
 
 ## Deterministic Space export
 
@@ -125,7 +129,8 @@ python scripts/deploy_huggingface_space.py \
 ```
 
 These commands do not invoke model inference. A real upload occurs only when
-`--dry-run` is omitted and the dedicated deploy credential is present.
+`--dry-run` is omitted inside the matching GitHub Actions OIDC context with the
+exact `HF_OIDC_RESOURCE` configured.
 
 ## Rollback and cost boundary
 

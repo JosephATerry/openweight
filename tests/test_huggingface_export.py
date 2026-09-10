@@ -75,24 +75,39 @@ def test_deployment_command_is_fixed_and_contains_no_token(tmp_path: Path) -> No
     assert "test-deploy-token" not in " ".join(command)
 
 
-def test_deployer_maps_the_dedicated_secret_only_to_subprocess(
+def test_deployer_uses_the_exact_trusted_publisher_resource(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     export_dir = tmp_path / "space"
     exporter.export_space(export_dir)
     captured: dict[str, object] = {}
 
-    def fake_run(command, *, check, env):
-        captured.update(command=command, check=check, env=env)
+    def fake_run(command, *, check):
+        captured.update(command=command, check=check)
 
     monkeypatch.setattr(deployer.subprocess, "run", fake_run)
-    monkeypatch.setenv("HF_SPACE_DEPLOY_TOKEN", "test-deploy-token")
+    monkeypatch.setenv(
+        "HF_OIDC_RESOURCE", "spaces/josephaterry/openweight"
+    )
 
-    deployer.deploy(export_dir, "b" * 40, "test-deploy-token")
+    deployer.deploy(export_dir, "b" * 40)
 
-    environment = captured["env"]
-    assert isinstance(environment, dict)
     assert captured["check"] is True
-    assert environment["HF_TOKEN"] == "test-deploy-token"
-    assert "HF_SPACE_DEPLOY_TOKEN" not in environment
-    assert "test-deploy-token" not in " ".join(captured["command"])
+    assert captured["command"] == deployer.build_upload_command(
+        export_dir, "b" * 40
+    )
+
+
+def test_deployer_rejects_a_missing_or_wrong_oidc_resource(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    export_dir = tmp_path / "space"
+    exporter.export_space(export_dir)
+    monkeypatch.delenv("HF_OIDC_RESOURCE", raising=False)
+
+    with pytest.raises(ValueError, match="configured destination Space"):
+        deployer.deploy(export_dir, "c" * 40)
+
+    monkeypatch.setenv("HF_OIDC_RESOURCE", "spaces/someone/else")
+    with pytest.raises(ValueError, match="configured destination Space"):
+        deployer.deploy(export_dir, "c" * 40)

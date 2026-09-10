@@ -107,7 +107,7 @@ def test_exact_public_origin_narrows_host_and_mcp_origin_configuration() -> None
     [
         "http://owner-openweight.hf.space",
         "https://*.hf.space",
-        "https://user:secret@owner-openweight.hf.space",
+        "https://user:secret@owner-openweight.hf.space",  # pragma: allowlist secret
         "https://localhost",
         "https://owner-openweight.hf.space/path",
     ],

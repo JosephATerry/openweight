@@ -11,6 +11,7 @@ name: Deploy Hugging Face Space
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: hugging-face-production
@@ -57,7 +58,7 @@ jobs:
 
       - name: Deploy export to josephaterry/openweight
         env:
-          HF_SPACE_DEPLOY_TOKEN: ${{ secrets.HF_SPACE_DEPLOY_TOKEN }}
+          HF_OIDC_RESOURCE: spaces/josephaterry/openweight
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: >-
           python scripts/deploy_huggingface_space.py

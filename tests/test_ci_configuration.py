@@ -244,7 +244,10 @@ def test_deployment_has_least_privilege_and_serialized_releases() -> None:
         step["uses"] for step in deploy["steps"] if "uses" in step
     ]
 
-    assert configuration["permissions"] == {"contents": "read"}
+    assert configuration["permissions"] == {
+        "contents": "read",
+        "id-token": "write",
+    }
     assert configuration["concurrency"] == {
         "group": "hugging-face-production",
         "cancel-in-progress": True,
@@ -258,19 +261,25 @@ def test_deployment_has_least_privilege_and_serialized_releases() -> None:
     assert all(SHA_PIN.fullmatch(reference) for reference in action_references)
 
 
-def test_deployment_secret_is_isolated_to_upload_step() -> None:
+def test_deployment_uses_trusted_publisher_without_a_stored_secret() -> None:
     configuration = deploy_workflow()
     deploy = configuration["jobs"]["deploy"]
-    secret_steps = [
+    upload_steps = [
         step
         for step in deploy["steps"]
-        if "HF_SPACE_DEPLOY_TOKEN" in json.dumps(step)
+        if step["name"] == "Deploy export to josephaterry/openweight"
     ]
     source = read(DEPLOY_WORKFLOW_PATH)
+    obsolete_secret = "HF_SPACE_" "DEPLOY_TOKEN"  # pragma: allowlist secret
 
-    assert len(secret_steps) == 1
-    assert secret_steps[0]["name"] == "Deploy export to josephaterry/openweight"
-    assert source.count("secrets.HF_SPACE_DEPLOY_TOKEN") == 1
+    assert len(upload_steps) == 1
+    assert upload_steps[0]["env"]["HF_OIDC_RESOURCE"] == (
+        "spaces/josephaterry/openweight"
+    )
+    assert obsolete_secret not in source
+    assert "${{ secrets." not in source
     assert "secrets.HF_TOKEN" not in source
+    assert "HF_TOKEN" not in source
     assert "/v1/agent/query" not in source
     assert "josephaterry/openweight" in source
+    assert DEPLOY_WORKFLOW_PATH.name == "deploy-huggingface.yml"

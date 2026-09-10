@@ -27,6 +27,10 @@ is read only from the runtime environment and is never returned by service
 metadata. Client construction is lazy and does not issue a request. Health,
 readiness, startup, MCP discovery, and page loads make zero inference calls.
 
+This runtime `HF_TOKEN` is never used for source deployment. GitHub publication
+uses the repo-level Trusted Publisher for `josephaterry/openweight`, exchanging
+the matching workflow's OIDC identity for a short-lived Space write token.
+
 Each policy question makes at most one application-level provider request. The
 timeout is finite (60 seconds by default), retries are fixed to zero, and there
 is no provider/model/Tavily fallback. Quota, timeout, and provider errors become
