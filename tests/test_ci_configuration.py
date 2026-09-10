@@ -85,6 +85,7 @@ def test_quality_job_matches_local_model_free_checks() -> None:
 
     assert "python -m pytest -q" in commands
     assert "--ignore=tests/test_policy_dataset_v3.py" in commands
+    assert "--ignore=tests/test_muse_training_compatibility.py" in commands
     assert "python -m pip check" in commands
     assert "pip-audit --requirement requirements-container.txt" in commands
     assert "detect-secrets-hook --baseline .secrets.baseline" in commands
@@ -160,6 +161,7 @@ def test_workflow_has_no_deployment_or_long_lived_secret_surface() -> None:
 
     assert not any(value in source for value in forbidden)
     assert "--ignore=tests/test_policy_dataset_v3.py" in source
+    assert "--ignore=tests/test_muse_training_compatibility.py" in source
 
 
 def test_ci_dependencies_do_not_install_training_or_cuda_stack() -> None:
