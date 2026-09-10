@@ -1,0 +1,58 @@
+# Python
+.venv/
+.venv-train/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend dependencies and generated output
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+frontend/test-results/
+
+# Secrets / environment variables
+.env
+.env.*
+!.env.example
+
+# Local caches
+.cache/
+.huggingface/
+
+# Model / training artifacts
+models/
+checkpoints/
+outputs/
+mlruns/
+*.safetensors
+*.pt
+*.pth
+*.gguf
+
+# Editor / OS files
+.vscode/
+.DS_Store
+
+# Unsloth generated cache
+unsloth_compiled_cache/
+
+# Terraform local state, plans, credentials, and plugin data
+.terraform/
+.terraform.d/plugin-cache/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc
+*.backend.hcl

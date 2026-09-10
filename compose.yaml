@@ -1,0 +1,97 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_DEMO_MODE: ${VITE_DEMO_MODE:-true}
+    image: openweight-platform-api:local
+    init: true
+    environment:
+      OPENWEIGHT_ENVIRONMENT: ${OPENWEIGHT_ENVIRONMENT:-development}
+      OPENWEIGHT_SERVICE_VERSION: ${OPENWEIGHT_SERVICE_VERSION:-0.1.0}
+      OPENWEIGHT_BUILD_SHA: ${OPENWEIGHT_BUILD_SHA:-local}
+      OPENWEIGHT_LOG_LEVEL: ${OPENWEIGHT_LOG_LEVEL:-INFO}
+      OPENWEIGHT_API_HOST: 0.0.0.0
+      OPENWEIGHT_API_PORT: ${OPENWEIGHT_API_PORT:-8000}
+      OPENWEIGHT_BACKEND: ${OPENWEIGHT_BACKEND:-gpt-oss}
+      OPENWEIGHT_MAX_NEW_TOKENS: ${OPENWEIGHT_MAX_NEW_TOKENS:-768}
+      OPENWEIGHT_DATABASE_REQUIRED: "true"
+      OPENWEIGHT_DATABASE_PROBE_TIMEOUT_SECONDS: ${OPENWEIGHT_DATABASE_PROBE_TIMEOUT_SECONDS:-2}
+      OPENWEIGHT_CHECKPOINT_BACKEND: ${OPENWEIGHT_CHECKPOINT_BACKEND:-memory}
+      OPENWEIGHT_WEB_ENABLED: ${OPENWEIGHT_WEB_ENABLED:-false}
+      OPENWEIGHT_GPT_OSS_MODEL_ID: ${OPENWEIGHT_GPT_OSS_MODEL_ID:-openai/gpt-oss-20b}
+      OPENWEIGHT_MUSE_BASE_URL: ${OPENWEIGHT_MUSE_BASE_URL:-http://127.0.0.1:8080/v1}
+      OPENWEIGHT_MUSE_MODEL_ALIAS: ${OPENWEIGHT_MUSE_MODEL_ALIAS:-meta-models/Muse-Glimmer-30B}
+      OPENWEIGHT_MUSE_TIMEOUT_SECONDS: ${OPENWEIGHT_MUSE_TIMEOUT_SECONDS:-300}
+      OPENWEIGHT_REASONING_STRENGTH: ${OPENWEIGHT_REASONING_STRENGTH:-low}
+      OPENWEIGHT_OBSERVABILITY_ENABLED: ${OPENWEIGHT_OBSERVABILITY_ENABLED:-true}
+      OPENWEIGHT_METRICS_ENABLED: ${OPENWEIGHT_METRICS_ENABLED:-true}
+      OPENWEIGHT_METRICS_ACCESS_MODE: ${OPENWEIGHT_METRICS_ACCESS_MODE:-public}
+      OPENWEIGHT_TRACING_ENABLED: ${OPENWEIGHT_TRACING_ENABLED:-false}
+      OPENWEIGHT_OBSERVABILITY_SERVICE_NAME: ${OPENWEIGHT_OBSERVABILITY_SERVICE_NAME:-openweight-platform}
+      OPENWEIGHT_OTLP_ENDPOINT: ${OPENWEIGHT_OTLP_ENDPOINT:-}
+      OPENWEIGHT_AUTH_ENABLED: ${OPENWEIGHT_AUTH_ENABLED:-false}
+      OPENWEIGHT_AUTH_ISSUER: ${OPENWEIGHT_AUTH_ISSUER:-}
+      OPENWEIGHT_AUTH_AUDIENCE: ${OPENWEIGHT_AUTH_AUDIENCE:-}
+      OPENWEIGHT_AUTH_JWKS_URL: ${OPENWEIGHT_AUTH_JWKS_URL:-}
+      OPENWEIGHT_MCP_ENABLED: ${OPENWEIGHT_MCP_ENABLED:-true}
+      OPENWEIGHT_MCP_PATH: ${OPENWEIGHT_MCP_PATH:-/mcp}
+      OPENWEIGHT_MCP_SERVER_NAME: ${OPENWEIGHT_MCP_SERVER_NAME:-openweight-platform}
+      OPENWEIGHT_MCP_RESOURCE_SERVER_URL: ${OPENWEIGHT_MCP_RESOURCE_SERVER_URL:-}
+      OPENWEIGHT_MCP_ALLOWED_HOSTS: ${OPENWEIGHT_MCP_ALLOWED_HOSTS:-api:*,127.0.0.1:*,localhost:*}
+      OPENWEIGHT_MCP_ALLOWED_ORIGINS: ${OPENWEIGHT_MCP_ALLOWED_ORIGINS:-http://127.0.0.1:*,http://localhost:*}
+      OPENWEIGHT_FRONTEND_ENABLED: ${OPENWEIGHT_FRONTEND_ENABLED:-true}
+      OPENWEIGHT_FRONTEND_DIST_DIR: /app/frontend/dist
+      LANGGRAPH_STRICT_MSGPACK: "true"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-prefer}
+      POSTGRES_SSLROOTCERT: ${POSTGRES_SSLROOTCERT:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+    ports:
+      - "127.0.0.1:${OPENWEIGHT_API_PORT:-8000}:${OPENWEIGHT_API_PORT:-8000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - /app/docker/api/healthcheck.py
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg17-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    stop_grace_period: 30s
+
+volumes:
+  postgres_data:

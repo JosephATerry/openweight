@@ -1,0 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Keep the API/RAG runtime CPU-portable instead of resolving PyPI's CUDA wheel.
+torch==2.13.0+cpu
+
+-r requirements.txt

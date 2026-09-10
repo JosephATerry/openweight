@@ -1,0 +1,21 @@
+services:
+  openweight-space:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        VITE_DEMO_MODE: "true"
+        OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS: "true"
+    image: openweight-platform:huggingface-local
+    init: true
+    env_file:
+      - env.example
+    environment:
+      OPENWEIGHT_DEMO_EMBEDDING_MODEL: Qwen/Qwen3-Embedding-0.6B
+    ports:
+      - "127.0.0.1:7860:7860"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s

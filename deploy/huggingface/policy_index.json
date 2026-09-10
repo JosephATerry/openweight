@@ -1,0 +1,405 @@
+{
+  "format_version": 1,
+  "embedding_model_id": "Qwen/Qwen3-Embedding-0.6B",
+  "embedding_model_revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+  "embedding_dimension": 1024,
+  "query_instruction": "Given an enterprise policy question, retrieve relevant policy passages that provide the rules needed to answer the question",
+  "chunk_size": 800,
+  "chunk_overlap": 120,
+  "chunk_count": 49,
+  "corpus_sha256": "a0a593ae8ec14ca48831b4fc7b0b21830c01ea93c0fcc17d3930714046e65f02",
+  "chunks": [
+    {
+      "citation_id": "[EPG-ACCESS-001#0]",
+      "policy_id": "EPG-ACCESS-001",
+      "title": "Privileged Infrastructure Access Policy",
+      "domain": "infrastructure-access",
+      "chunk_index": 0,
+      "content_sha256": "18f531e36c319062be03d69abd8bc557f9aa0fc17da69e47ac4518cce0039421"
+    },
+    {
+      "citation_id": "[EPG-ACCESS-001#1]",
+      "policy_id": "EPG-ACCESS-001",
+      "title": "Privileged Infrastructure Access Policy",
+      "domain": "infrastructure-access",
+      "chunk_index": 1,
+      "content_sha256": "a45ea60991ee28382c0b427b6fe233f13b98b65e915006ca6694a4826f1e2466"
+    },
+    {
+      "citation_id": "[EPG-ACCESS-001#2]",
+      "policy_id": "EPG-ACCESS-001",
+      "title": "Privileged Infrastructure Access Policy",
+      "domain": "infrastructure-access",
+      "chunk_index": 2,
+      "content_sha256": "6fff4601304b6667fcb993840e94ddd42ebe478cd575e2440489099a137eacd1"
+    },
+    {
+      "citation_id": "[EPG-ACCESS-001#3]",
+      "policy_id": "EPG-ACCESS-001",
+      "title": "Privileged Infrastructure Access Policy",
+      "domain": "infrastructure-access",
+      "chunk_index": 3,
+      "content_sha256": "39443c0e3d2e06e2bf503728a753b36f551d7be1a1b285bb8c8cca8d48c93a5b"
+    },
+    {
+      "citation_id": "[EPG-HR-002#0]",
+      "policy_id": "EPG-HR-002",
+      "title": "Human Resources and Payroll Access Policy",
+      "domain": "hr-payroll",
+      "chunk_index": 0,
+      "content_sha256": "c25a302e1d08c3f5e7ea11a340b9227dbdd777941bf544729591607da4aa07b8"
+    },
+    {
+      "citation_id": "[EPG-HR-002#1]",
+      "policy_id": "EPG-HR-002",
+      "title": "Human Resources and Payroll Access Policy",
+      "domain": "hr-payroll",
+      "chunk_index": 1,
+      "content_sha256": "84a53143f276c7d6141ed203b6ab220bf7aa4f40d68577bbaa780d23acca59eb"
+    },
+    {
+      "citation_id": "[EPG-HR-002#2]",
+      "policy_id": "EPG-HR-002",
+      "title": "Human Resources and Payroll Access Policy",
+      "domain": "hr-payroll",
+      "chunk_index": 2,
+      "content_sha256": "5c98ac05bd8ca604a19f3a53f02361f97d977c848520537153274197ece3937c"
+    },
+    {
+      "citation_id": "[EPG-HR-002#3]",
+      "policy_id": "EPG-HR-002",
+      "title": "Human Resources and Payroll Access Policy",
+      "domain": "hr-payroll",
+      "chunk_index": 3,
+      "content_sha256": "ea6d3a6617449aead79f5c89d24ba38ddda6bf7ec10a3e09fbbf3aa914e604a9"
+    },
+    {
+      "citation_id": "[EPG-HR-002#4]",
+      "policy_id": "EPG-HR-002",
+      "title": "Human Resources and Payroll Access Policy",
+      "domain": "hr-payroll",
+      "chunk_index": 4,
+      "content_sha256": "e9b8cc34471bc1a3b94c11cf1093e5c756617876b4e2f558bea1250c859e927d"
+    },
+    {
+      "citation_id": "[EPG-PRIVACY-003#0]",
+      "policy_id": "EPG-PRIVACY-003",
+      "title": "Customer Data and Privacy Access Policy",
+      "domain": "customer-privacy",
+      "chunk_index": 0,
+      "content_sha256": "72766c0b09fb241f508b06476de3177f9d68740445601501d9af9fb9d117b258"
+    },
+    {
+      "citation_id": "[EPG-PRIVACY-003#1]",
+      "policy_id": "EPG-PRIVACY-003",
+      "title": "Customer Data and Privacy Access Policy",
+      "domain": "customer-privacy",
+      "chunk_index": 1,
+      "content_sha256": "b62c1fb8a55d14042d8690944c27aa5cf1abbf8f47597276e81ea32753c43766"
+    },
+    {
+      "citation_id": "[EPG-PRIVACY-003#2]",
+      "policy_id": "EPG-PRIVACY-003",
+      "title": "Customer Data and Privacy Access Policy",
+      "domain": "customer-privacy",
+      "chunk_index": 2,
+      "content_sha256": "b77864c19d8cd53982dc0ff79693486f20780adc261f02b4a53e80d553dc95e0"
+    },
+    {
+      "citation_id": "[EPG-PRIVACY-003#3]",
+      "policy_id": "EPG-PRIVACY-003",
+      "title": "Customer Data and Privacy Access Policy",
+      "domain": "customer-privacy",
+      "chunk_index": 3,
+      "content_sha256": "b2013be9afcbe0a53aaff331d754e2573490710c4e5b4e10d18af6e3a63aba09"
+    },
+    {
+      "citation_id": "[EPG-PRIVACY-003#4]",
+      "policy_id": "EPG-PRIVACY-003",
+      "title": "Customer Data and Privacy Access Policy",
+      "domain": "customer-privacy",
+      "chunk_index": 4,
+      "content_sha256": "26b316a8fe97495c46ea633fb55ee3e89d0eab88847404c313190db3dcbe8807"
+    },
+    {
+      "citation_id": "[EPG-VENDOR-004#0]",
+      "policy_id": "EPG-VENDOR-004",
+      "title": "Vendor and Contractor Access Policy",
+      "domain": "vendor-contractor-access",
+      "chunk_index": 0,
+      "content_sha256": "cd93c33e58b823c5834049a935ae29f2df7bbb6402dd563c2a5f871368e1d51c"
+    },
+    {
+      "citation_id": "[EPG-VENDOR-004#1]",
+      "policy_id": "EPG-VENDOR-004",
+      "title": "Vendor and Contractor Access Policy",
+      "domain": "vendor-contractor-access",
+      "chunk_index": 1,
+      "content_sha256": "4c0e53ac3e721d5fa69b765aedccbc3935454568c6b03b85162da37085a0efdc"
+    },
+    {
+      "citation_id": "[EPG-VENDOR-004#2]",
+      "policy_id": "EPG-VENDOR-004",
+      "title": "Vendor and Contractor Access Policy",
+      "domain": "vendor-contractor-access",
+      "chunk_index": 2,
+      "content_sha256": "311e77be198aa312d6ea097d4befcc18df0bb7a4341539018f5acaa3b0c35667"
+    },
+    {
+      "citation_id": "[EPG-PROCURE-005#0]",
+      "policy_id": "EPG-PROCURE-005",
+      "title": "Procurement Approval and Purchasing Policy",
+      "domain": "procurement",
+      "chunk_index": 0,
+      "content_sha256": "4b1a71e40939adf38e3a07fe1385115b4dcafbda7ff561b5b8775132aff5b64b"
+    },
+    {
+      "citation_id": "[EPG-PROCURE-005#1]",
+      "policy_id": "EPG-PROCURE-005",
+      "title": "Procurement Approval and Purchasing Policy",
+      "domain": "procurement",
+      "chunk_index": 1,
+      "content_sha256": "31507995208f551297d1039bc041beaef65b77248e31edb7f9b155c57811711c"
+    },
+    {
+      "citation_id": "[EPG-PROCURE-005#2]",
+      "policy_id": "EPG-PROCURE-005",
+      "title": "Procurement Approval and Purchasing Policy",
+      "domain": "procurement",
+      "chunk_index": 2,
+      "content_sha256": "24d2ad9c3f4108456974a87ce8a267779a570ab83990e16124a89da1d7f5025e"
+    },
+    {
+      "citation_id": "[EPG-PROCURE-005#3]",
+      "policy_id": "EPG-PROCURE-005",
+      "title": "Procurement Approval and Purchasing Policy",
+      "domain": "procurement",
+      "chunk_index": 3,
+      "content_sha256": "adf8a136e5aa64ffed9df1c9e1f7f4c6c8ad3de27d2c89e173e6f53d2f8db159"
+    },
+    {
+      "citation_id": "[EPG-PROCURE-005#4]",
+      "policy_id": "EPG-PROCURE-005",
+      "title": "Procurement Approval and Purchasing Policy",
+      "domain": "procurement",
+      "chunk_index": 4,
+      "content_sha256": "2b7b75a90b7d2c85f925fd47a68fac537ff01b81f430a93aa2d060dfd46c4136"
+    },
+    {
+      "citation_id": "[EPG-TRAVEL-006#0]",
+      "policy_id": "EPG-TRAVEL-006",
+      "title": "Business Travel and Compliance Policy",
+      "domain": "travel-compliance",
+      "chunk_index": 0,
+      "content_sha256": "cc4464d356887e59aac4379a2dda135a2a1b930250ea38e527eaa9d35ca715b8"
+    },
+    {
+      "citation_id": "[EPG-TRAVEL-006#1]",
+      "policy_id": "EPG-TRAVEL-006",
+      "title": "Business Travel and Compliance Policy",
+      "domain": "travel-compliance",
+      "chunk_index": 1,
+      "content_sha256": "dfd36cf82bb0d29a26b6f61e215a813e8d365a0694db226621a3488f298afa40"
+    },
+    {
+      "citation_id": "[EPG-TRAVEL-006#2]",
+      "policy_id": "EPG-TRAVEL-006",
+      "title": "Business Travel and Compliance Policy",
+      "domain": "travel-compliance",
+      "chunk_index": 2,
+      "content_sha256": "047cfea251b341220274c07f28ce6393cfa95013f646a46f549c172a3ee3a2c0"
+    },
+    {
+      "citation_id": "[EPG-TRAVEL-006#3]",
+      "policy_id": "EPG-TRAVEL-006",
+      "title": "Business Travel and Compliance Policy",
+      "domain": "travel-compliance",
+      "chunk_index": 3,
+      "content_sha256": "fc10eed2759b0ae5d3ed405a3ae389dea63aadc7b3c66a630df0fd0c072734e2"
+    },
+    {
+      "citation_id": "[EPG-TRAVEL-006#4]",
+      "policy_id": "EPG-TRAVEL-006",
+      "title": "Business Travel and Compliance Policy",
+      "domain": "travel-compliance",
+      "chunk_index": 4,
+      "content_sha256": "3e17fb315a3192a6ce97b3cc66485bd25acf8460f9f984c7b2d82fdeb126f278"
+    },
+    {
+      "citation_id": "[EPG-RELEASE-007#0]",
+      "policy_id": "EPG-RELEASE-007",
+      "title": "Software Release and Production Deployment Policy",
+      "domain": "software-release",
+      "chunk_index": 0,
+      "content_sha256": "484bcfaae7350e989d1b51efb4e533ec84924d9c8894d6ac7245d0345d131924"
+    },
+    {
+      "citation_id": "[EPG-RELEASE-007#1]",
+      "policy_id": "EPG-RELEASE-007",
+      "title": "Software Release and Production Deployment Policy",
+      "domain": "software-release",
+      "chunk_index": 1,
+      "content_sha256": "4c0555f8d084e750d82683f10e2be9f03764e1cd7414c82f41a4c5e9bac1fbb3"
+    },
+    {
+      "citation_id": "[EPG-RELEASE-007#2]",
+      "policy_id": "EPG-RELEASE-007",
+      "title": "Software Release and Production Deployment Policy",
+      "domain": "software-release",
+      "chunk_index": 2,
+      "content_sha256": "7e3c2ed2aaeeee72516b7cef6543431be419c1b5999963a2600807924b99dd15"
+    },
+    {
+      "citation_id": "[EPG-INCIDENT-008#0]",
+      "policy_id": "EPG-INCIDENT-008",
+      "title": "Incident Response Access Policy",
+      "domain": "incident-response",
+      "chunk_index": 0,
+      "content_sha256": "eda6e64f43a28fc430660d363c43deea4731b58efc2ce144f433f1869be1eece"
+    },
+    {
+      "citation_id": "[EPG-INCIDENT-008#1]",
+      "policy_id": "EPG-INCIDENT-008",
+      "title": "Incident Response Access Policy",
+      "domain": "incident-response",
+      "chunk_index": 1,
+      "content_sha256": "a3e2f43dc395b7a76f864b8c7fb48008ced5920fed58da3c2d7394c9d93c53f4"
+    },
+    {
+      "citation_id": "[EPG-INCIDENT-008#2]",
+      "policy_id": "EPG-INCIDENT-008",
+      "title": "Incident Response Access Policy",
+      "domain": "incident-response",
+      "chunk_index": 2,
+      "content_sha256": "4ea8deab5b15779bd2fffb80a8dd43b2e99e0a350196c4d14f3538a722fea836"
+    },
+    {
+      "citation_id": "[EPG-INCIDENT-008#3]",
+      "policy_id": "EPG-INCIDENT-008",
+      "title": "Incident Response Access Policy",
+      "domain": "incident-response",
+      "chunk_index": 3,
+      "content_sha256": "d4b6c27e1f36cea97a97cc00d523151fad20f92b80b36e3ca7b3a0b34cd75216"
+    },
+    {
+      "citation_id": "[EPG-FINANCE-009#0]",
+      "policy_id": "EPG-FINANCE-009",
+      "title": "Finance and Payment Systems Access Policy",
+      "domain": "finance-payments",
+      "chunk_index": 0,
+      "content_sha256": "6b6e9f09b1e76ccd401741246528bf85347720f9e9e593e3ee07b15a6bdba46f"
+    },
+    {
+      "citation_id": "[EPG-FINANCE-009#1]",
+      "policy_id": "EPG-FINANCE-009",
+      "title": "Finance and Payment Systems Access Policy",
+      "domain": "finance-payments",
+      "chunk_index": 1,
+      "content_sha256": "68c33dd7ecedff910eeba1107526012f0f3385261fe3f00a6c0346c65b199356"
+    },
+    {
+      "citation_id": "[EPG-FINANCE-009#2]",
+      "policy_id": "EPG-FINANCE-009",
+      "title": "Finance and Payment Systems Access Policy",
+      "domain": "finance-payments",
+      "chunk_index": 2,
+      "content_sha256": "2022701a8268ea61a0383402838989f370bd97c0892fbe84957a39608d2f4a62"
+    },
+    {
+      "citation_id": "[EPG-SECURITY-010#0]",
+      "policy_id": "EPG-SECURITY-010",
+      "title": "Security Training and Multi-Factor Authentication Policy",
+      "domain": "security-awareness",
+      "chunk_index": 0,
+      "content_sha256": "9328bca47af4c3b5b31beacb86cf8a3dc3cedd496eb78e74ff2ed4b57371c2f0"
+    },
+    {
+      "citation_id": "[EPG-SECURITY-010#1]",
+      "policy_id": "EPG-SECURITY-010",
+      "title": "Security Training and Multi-Factor Authentication Policy",
+      "domain": "security-awareness",
+      "chunk_index": 1,
+      "content_sha256": "e6e8ca96e2b88752382c59a73a82da4c471964eea1e602f0fdffb7111fd0fec9"
+    },
+    {
+      "citation_id": "[EPG-SECURITY-010#2]",
+      "policy_id": "EPG-SECURITY-010",
+      "title": "Security Training and Multi-Factor Authentication Policy",
+      "domain": "security-awareness",
+      "chunk_index": 2,
+      "content_sha256": "2d2d5f22d0fc3918ea37e2b33c53be5d29608180382e9ca627089c270319122c"
+    },
+    {
+      "citation_id": "[EPG-SECURITY-010#3]",
+      "policy_id": "EPG-SECURITY-010",
+      "title": "Security Training and Multi-Factor Authentication Policy",
+      "domain": "security-awareness",
+      "chunk_index": 3,
+      "content_sha256": "3af5c991af80b9b89721895622b7d2ecd3bb072b2c4a4c154170b69a163a2f67"
+    },
+    {
+      "citation_id": "[EPG-DATA-011#0]",
+      "policy_id": "EPG-DATA-011",
+      "title": "Data Export and Secure Transfer Policy",
+      "domain": "data-export",
+      "chunk_index": 0,
+      "content_sha256": "b1f9a265b31223839061a5cc31791f6b188d5e60e1dc93672e2d385d3964617d"
+    },
+    {
+      "citation_id": "[EPG-DATA-011#1]",
+      "policy_id": "EPG-DATA-011",
+      "title": "Data Export and Secure Transfer Policy",
+      "domain": "data-export",
+      "chunk_index": 1,
+      "content_sha256": "b1d51f62aee16138ed4ebcf46d4152d2e7c323ad060ba4858d696dbd5a37cc34"
+    },
+    {
+      "citation_id": "[EPG-DATA-011#2]",
+      "policy_id": "EPG-DATA-011",
+      "title": "Data Export and Secure Transfer Policy",
+      "domain": "data-export",
+      "chunk_index": 2,
+      "content_sha256": "e44f7c14ccec7745632d2642064321ecfc64855d9d8765addbd9bc1647bf9288"
+    },
+    {
+      "citation_id": "[EPG-DATA-011#3]",
+      "policy_id": "EPG-DATA-011",
+      "title": "Data Export and Secure Transfer Policy",
+      "domain": "data-export",
+      "chunk_index": 3,
+      "content_sha256": "6c40159e4519e83677eb1347f5b9d76cdbc54552636d8aff7c14d1641c4e3231"
+    },
+    {
+      "citation_id": "[EPG-LEGAL-012#0]",
+      "policy_id": "EPG-LEGAL-012",
+      "title": "Legal and Compliance Exception Policy",
+      "domain": "legal-compliance",
+      "chunk_index": 0,
+      "content_sha256": "6a871d6e71590522decbd0e46d2eb1a8bc32c8b682d49de8ecfead0cde161ade"
+    },
+    {
+      "citation_id": "[EPG-LEGAL-012#1]",
+      "policy_id": "EPG-LEGAL-012",
+      "title": "Legal and Compliance Exception Policy",
+      "domain": "legal-compliance",
+      "chunk_index": 1,
+      "content_sha256": "2b64349e5ec3e12c3233292c6fafc8470f88f7da21e94a7c9cb358a8e562fad9"
+    },
+    {
+      "citation_id": "[EPG-LEGAL-012#2]",
+      "policy_id": "EPG-LEGAL-012",
+      "title": "Legal and Compliance Exception Policy",
+      "domain": "legal-compliance",
+      "chunk_index": 2,
+      "content_sha256": "adffddac1c09f4f7c20b52c4fa8254fb9352186df887e10b755e356a2568d953"
+    },
+    {
+      "citation_id": "[EPG-LEGAL-012#3]",
+      "policy_id": "EPG-LEGAL-012",
+      "title": "Legal and Compliance Exception Policy",
+      "domain": "legal-compliance",
+      "chunk_index": 3,
+      "content_sha256": "365f85a717a8f5c11033d25899901f092b5776f892d6fc488c1172d617d898b9"
+    }
+  ]
+}
