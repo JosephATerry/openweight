@@ -11,8 +11,7 @@ the language model as an authorization boundary.
 [![CI](https://github.com/JosephATerry/openweight/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JosephATerry/openweight/actions/workflows/ci.yml)
 
 **[Open the live application](https://josephaterry-openweight.hf.space)** ·
-[Hugging Face project](https://huggingface.co/spaces/josephaterry/openweight) ·
-[GitHub repository](https://github.com/JosephATerry/openweight)
+[Hugging Face Space](https://huggingface.co/spaces/josephaterry/openweight)
 
 ![OpenWeight Governance Workspace showing policy, access-request, and approval workflows](docs/assets/openweight-overview.png)
 
