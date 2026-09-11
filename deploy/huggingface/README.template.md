@@ -8,58 +8,145 @@ app_port: 7860
 pinned: false
 ---
 
-# OpenWeight recruiter demo
+# OpenWeight
 
-This template is exported as the root `README.md` for the public Docker Space
-[`josephaterry/openweight`](https://huggingface.co/spaces/josephaterry/openweight).
-The canonical engineering source remains
-[`JosephATerry/openweight`](https://github.com/JosephATerry/openweight).
+## Enterprise LLM Governance Platform
 
-Configure the runtime secret named `HF_TOKEN` in Space settings. Never commit
-its value. Configure these public variables:
+OpenWeight combines grounded internal policy assistance with governed
+consequential actions. Deterministic controls and explicit human approval
+separate what GPT-OSS proposes from what the platform may execute.
+
+**Designed and built by Joseph A. Terry.**
+
+**[Open the live application](https://josephaterry-openweight.hf.space)** ·
+[View the GitHub engineering case study](https://github.com/JosephATerry/openweight) ·
+[Hugging Face Space](https://huggingface.co/spaces/josephaterry/openweight)
+
+![OpenWeight Governance Workspace showing policy, access-request, and approval workflows](https://raw.githubusercontent.com/JosephATerry/openweight/main/docs/assets/openweight-overview.png)
+
+## What to try
+
+### Policy & Evidence
+
+Open **Policy & Evidence** and ask:
+
+> What policy evidence is required before approving privileged access?
+
+Review the streamed GPT-OSS answer, its validated citation IDs, and the
+separate **Supporting Evidence** passages.
+
+![OpenWeight Policy and Evidence workspace showing a GPT-OSS answer, validated citation IDs, and Supporting Evidence](https://raw.githubusercontent.com/JosephATerry/openweight/main/docs/assets/openweight-policy-evidence.png)
+
+### Governed Actions
+
+1. Switch **Demo Persona** to Operator.
+2. Open **Access Requests**, review a request, and create a synthetic
+   status-change proposal.
+3. Open **Approvals** and observe that the proposal is still awaiting an
+   explicit human decision before execution.
+
+The pending approval is the important boundary; the walkthrough does not
+require approving or executing the proposal.
+
+## Why this is more than a chatbot
+
+**Policy & Evidence**
 
 ```text
-OPENWEIGHT_DEPLOYMENT_PROFILE=huggingface
-OPENWEIGHT_ENVIRONMENT=demo
-OPENWEIGHT_API_HOST=0.0.0.0
-OPENWEIGHT_API_PORT=7860
-OPENWEIGHT_BACKEND=gpt-oss
-OPENWEIGHT_GPT_OSS_MODEL_ID=openai/gpt-oss-20b
-OPENWEIGHT_HF_PROVIDER=groq
-OPENWEIGHT_HF_TIMEOUT_SECONDS=60
-OPENWEIGHT_HF_MAX_RETRIES=0
-OPENWEIGHT_HF_INFERENCE_CONCURRENCY_LIMIT=2
-OPENWEIGHT_HF_RATE_LIMIT_REQUESTS=5
-OPENWEIGHT_HF_RATE_LIMIT_WINDOW_SECONDS=60
-OPENWEIGHT_HF_RATE_LIMIT_MAX_CLIENTS=1024
-OPENWEIGHT_DATABASE_REQUIRED=false
-OPENWEIGHT_CHECKPOINT_BACKEND=memory
-OPENWEIGHT_WEB_ENABLED=false
-OPENWEIGHT_FRONTEND_ENABLED=true
-OPENWEIGHT_FRONTEND_DIST_DIR=/app/frontend/dist
-OPENWEIGHT_METRICS_ENABLED=false
-OPENWEIGHT_METRICS_ACCESS_MODE=disabled
-OPENWEIGHT_AUTH_ENABLED=false
-OPENWEIGHT_MCP_ENABLED=true
-OPENWEIGHT_MCP_ALLOWED_HOSTS=localhost:*,127.0.0.1:*
-OPENWEIGHT_MCP_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*
-OPENWEIGHT_DEMO_POLICY_INDEX=/app/deploy/huggingface/policy_index.npz
-OPENWEIGHT_DEMO_EMBEDDING_MODEL=/app/models/qwen3-embedding-0.6b
-VITE_DEMO_MODE=true
-OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=true
+question
+    -> semantic retrieval
+    -> GPT-OSS 20B
+    -> grounded answer
+    -> citation IDs + Supporting Evidence
 ```
 
-`VITE_DEMO_MODE` and `OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS` are build variables;
-the others are runtime variables configured in Space settings.
+**Governed Actions**
 
-Set `OPENWEIGHT_HF_PUBLIC_ORIGIN` to the one exact canonical origin,
-`https://josephaterry-openweight.hf.space`. The application then derives an
-exact whole-app Host rule and exact MCP Host/Origin rules from it. Wildcard or
-credential-bearing origins are rejected.
+```text
+proposal
+    -> deterministic validation / authorization
+    -> explicit human approval
+    -> fixed controlled executor
+    -> audit / replay protection
+```
 
-The deployed Space uses CPU hardware and Hugging Face Inference Providers. It
-does not need a dedicated GPU, hosted PostgreSQL, or dedicated inference
-endpoint. Remote GPT-OSS requests are metered by the selected provider. This
-application sets a finite timeout and performs no application retries or
-fallbacks, but monetary limits must be configured in the Hugging Face/provider
-account settings. Publishing does not itself opt into pay-as-you-go.
+> **The model is not the security boundary.**
+
+Model output cannot authorize itself or directly execute a consequential
+change. Backend controls remain authoritative.
+
+## Technical highlights
+
+- React 19 and TypeScript product interface over a typed FastAPI service
+  boundary
+- `openai/gpt-oss-20b` generation with final-answer-only streaming
+- `Qwen/Qwen3-Embedding-0.6B` semantic retrieval over 12 synthetic policy
+  documents, 49 portable-index chunks, and 1,024-dimensional embeddings
+- LangGraph interruption and resume for explicit human approval
+- Bounded MCP interoperability, without arbitrary SQL, shell, or write access
+- Multi-stage non-root Docker delivery
+- Model-free GitHub Actions CI/CD with GitHub OIDC and Hugging Face Trusted
+  Publishing
+
+The [GitHub engineering case study](https://github.com/JosephATerry/openweight)
+covers the complete architecture and security model, PostgreSQL/pgvector
+durability, observability, containers, MCP, CI/CD, and the Terraform/Azure
+production reference design.
+
+## Public demo boundary
+
+This Hugging Face Space is a bounded recruiter demonstration:
+
+- All visible policy and access-governance data is synthetic.
+- GPT-OSS inference is remote through Hugging Face Inference Providers and
+  Groq; retrieval uses a portable Qwen semantic index.
+- Access-request, proposal, and approval state is synthetic, process-local,
+  ephemeral, and resets when the Space restarts.
+- **Demo Persona is a UI simulation, not production authentication.**
+- The public policy flow abstains when internal evidence is insufficient. It
+  does not silently fall back to Tavily, web search, or unsupported general
+  model knowledge.
+- Citation-ID validation verifies membership in the retrieved evidence set,
+  not semantic entailment; review the cited passage.
+- The public demo does not claim document-level ACL enforcement.
+- Azure is a production reference architecture and is **not deployed**.
+
+The public Space does not run the full PostgreSQL/pgvector durability and
+enterprise identity posture represented by the local and production-reference
+architectures.
+
+## Source and engineering case study
+
+The canonical engineering repository is
+**[JosephATerry/openweight](https://github.com/JosephATerry/openweight)**. It
+contains the full technical case study, architecture, security boundaries,
+local/full deployment posture, CI/CD, containers, MCP, observability, and
+Azure/Terraform reference design.
+
+## Author
+
+**Designed and built by Joseph A. Terry.**
+
+[GitHub](https://github.com/JosephATerry) ·
+[Hugging Face](https://huggingface.co/josephaterry)
+
+## Deployment notes
+
+The deterministic deployment export installs this file as the Docker Space
+card and serves the React/FastAPI application on port `7860`. The Space uses
+CPU hardware for the application and portable Qwen retrieval; it requires no
+dedicated GPU, hosted PostgreSQL, persistent storage, or dedicated inference
+endpoint.
+
+The runtime secret is named `HF_TOKEN` and is configured only in Space
+settings. The exact public origin is
+`https://josephaterry-openweight.hf.space`. Remote inference is metered, uses
+a finite timeout, and has zero application retries or provider fallback.
+Provider/account settings—not application code—govern monetary limits.
+Publishing does not itself opt into pay-as-you-go.
+
+See the
+[Hugging Face deployment documentation](https://github.com/JosephATerry/openweight/blob/main/docs/huggingface.md)
+for the complete configuration and operational details.
+
+© 2026 Joseph A. Terry. All rights reserved.
