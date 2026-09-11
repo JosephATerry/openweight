@@ -14,6 +14,8 @@ the language model as an authorization boundary.
 [Hugging Face project](https://huggingface.co/spaces/josephaterry/openweight) ·
 [GitHub repository](https://github.com/JosephATerry/openweight)
 
+![OpenWeight Governance Workspace showing policy, access-request, and approval workflows](docs/assets/openweight-overview.png)
+
 ## Why OpenWeight
 
 Enterprise AI has to do more than generate plausible text. It must show what
@@ -44,6 +46,11 @@ citations and the evidence used by the answer. When the retrieved internal
 evidence is insufficient, OpenWeight abstains instead of silently answering
 from general model knowledge or falling back to web search.
 
+![OpenWeight Policy and Evidence workspace showing a GPT-OSS answer, validated citation IDs, and Supporting Evidence](docs/assets/openweight-policy-evidence.png)
+
+_A GPT-OSS 20B answer grounded in retrieved synthetic enterprise policy, with
+validated citation IDs and visible Supporting Evidence._
+
 ### Governed Actions
 
 ```text
@@ -59,12 +66,14 @@ OpenWeight demonstrates this boundary with access-request status changes. A
 proposal does not perform a write. Only an explicitly approved, allowlisted
 action can reach the fixed executor; rejection has no operational effect.
 
+![OpenWeight approval review showing a proposed access-request change awaiting explicit human authorization](docs/assets/openweight-governed-approval.png)
+
 ## Try the live demo
 
 Visit **[josephaterry-openweight.hf.space](https://josephaterry-openweight.hf.space)**.
 
-1. Open **Policy & Evidence** and ask: _“When can break-glass credentials be
-   used?”_
+1. Open **Policy & Evidence** and ask: _“What policy evidence is required before
+   approving privileged access?”_
 2. Review the streamed answer, inline citations, and Supporting Evidence cards.
 3. Switch the **Demo Persona** to Operator and open **Access Requests**.
 4. Create a status-change proposal and confirm that no change has executed yet.
@@ -80,27 +89,33 @@ restarts.
 ## Architecture
 
 ```mermaid
-flowchart LR
-    browser["Employee browser"] --> react["React 19 + TypeScript"]
-    client["MCP-compatible client"] --> mcp["/mcp · 7 bounded tools"]
-
-    react --> api["FastAPI typed service boundary"]
+flowchart TB
+    browser["Employee browser<br/>React 19 + TypeScript"]
+    client["MCP-compatible client"] --> mcp["MCP surface<br/>7 bounded tools"]
+    browser --> api["OpenWeight<br/>FastAPI · typed and secured service boundary"]
     mcp --> api
-    api --> security["Authentication · authorization · validation"]
 
-    security --> policy["Policy & Evidence"]
-    policy --> retrieval["Semantic retrieval"]
-    qwen["Qwen embedding index"] --> retrieval
-    retrieval --> gpt["GPT-OSS 20B"]
-    gpt --> answer["Streamed answer + validated citation IDs"]
+    subgraph policy["Policy & Evidence"]
+        direction TB
+        retrieval["Semantic retrieval<br/>Qwen embeddings + policy index"]
+        gpt["GPT-OSS 20B<br/>grounded generation"]
+        answer["Streamed final answer<br/>validated citation IDs"]
+        retrieval --> gpt --> answer
+    end
 
-    security --> proposal["Governed action proposal"]
-    proposal --> guard["Deterministic guardrails"]
-    guard --> approval["Explicit human approval"]
-    approval --> executor["Fixed controlled executor"]
-    executor --> state["PostgreSQL durability or public demo sandbox"]
+    subgraph actions["Governed Actions"]
+        direction TB
+        proposal["Action proposal"]
+        controls["Deterministic controls<br/>authorization + policy checks"]
+        approval["Explicit human approval"]
+        executor["Fixed controlled executor"]
+        state["Durable PostgreSQL<br/>or ephemeral public-demo state"]
+        proposal --> controls --> approval --> executor --> state
+    end
 
-    api -. "privacy-safe signals" .-> telemetry["Logs · metrics · OpenTelemetry"]
+    api --> retrieval
+    api --> proposal
+    api -.-> crosscut["Cross-cutting<br/>security + privacy-safe observability"]
 ```
 
 FastAPI remains the normal product/API boundary. MCP is an additional
