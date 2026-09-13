@@ -10,8 +10,12 @@ It intentionally has local state because an Azure backend cannot store the
 state that creates itself. D19D initialized only local provider plugins with
 the backend disabled and did not apply this root. During a reviewed D19E
 bootstrap, apply it once with a dedicated infrastructure operator object ID,
-secure the small local bootstrap state, and migrate the application root with
-`terraform init -migrate-state` using:
+then keep `infra/terraform/state-bootstrap/terraform.tfstate` local, ignored,
+mode `0600`, and separately secured. Do not migrate that bootstrap state into
+the storage account it manages.
+
+Supply the main application's partial `azurerm` backend with reviewed values
+outside Git, for example in `/tmp/openweight-demo.backend.hcl`:
 
 ```hcl
 resource_group_name  = "rg-owp-tfstate"
@@ -20,6 +24,33 @@ container_name       = "tfstate"
 key                  = "openweight/demo.tfstate"
 use_azuread_auth      = true
 ```
+
+For the first main-root initialization, first verify that neither
+`infra/terraform/terraform.tfstate` nor its backup exists. There is no state to
+migrate in that case, so initialize from the repository root with:
+
+```bash
+terraform -chdir=infra/terraform init \
+  -reconfigure \
+  -input=false \
+  -lockfile=readonly \
+  -backend-config=/tmp/openweight-demo.backend.hcl
+```
+
+Use `-migrate-state` only if the main root already has an existing local state
+that must be transferred to Azure Blob Storage. Treat that as an explicit,
+reviewed state-migration operation; preserve a secure backup, verify the source
+state first, and do not combine `-migrate-state` with `-reconfigure`:
+
+```bash
+terraform -chdir=infra/terraform init \
+  -migrate-state \
+  -lockfile=readonly \
+  -backend-config=/tmp/openweight-demo.backend.hcl
+```
+
+This conditional migration applies only to existing main-root state. It never
+applies to the separately managed state-bootstrap root.
 
 Do not use an account key, SAS token, client secret, public blob access, GRS,
 or a premium storage tier. Public network reachability is retained only so a
