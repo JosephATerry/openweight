@@ -253,6 +253,7 @@ def test_remote_state_bootstrap_is_low_cost_protected_and_separate() -> None:
 
     assert re.search(r'account_tier\s*=\s*"Standard"', state)
     assert re.search(r'account_replication_type\s*=\s*"LRS"', state)
+    assert re.search(r"local_user_enabled\s*=\s*false", state)
     assert re.search(r"shared_access_key_enabled\s*=\s*false", state)
     assert "versioning_enabled  = true" in state
     assert "container_access_type = \"private\"" in state
