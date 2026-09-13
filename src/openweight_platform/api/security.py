@@ -124,6 +124,7 @@ class AuthorizationBoundary:
         verifier: TokenVerifier | None = None,
     ) -> None:
         self._enabled = settings.auth_enabled
+        self._public_read_enabled = settings.public_read_enabled
         if self._enabled and verifier is None and all(
             (
                 settings.auth_issuer,
@@ -143,6 +144,16 @@ class AuthorizationBoundary:
         authorization: str | None,
         permission: Permission,
     ) -> AuthenticatedPrincipal:
+        if (
+            self._enabled
+            and self._public_read_enabled
+            and permission == "agent.query"
+            and authorization is None
+        ):
+            return AuthenticatedPrincipal(
+                subject="public-demo-reader",
+                permissions=frozenset({"agent.query"}),
+            )
         principal = self.authenticate(authorization)
         if permission not in principal.permissions:
             raise PermissionDeniedError

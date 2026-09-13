@@ -1,209 +1,165 @@
-# Terraform Azure reference implementation
+# Terraform Azure OpenWeight implementation
 
-This directory translates the approved D12 architecture into direct AzureRM
-resources. D13 created and statically reviewed the configuration only. It did
-not authenticate to Azure, initialize remote state, plan, apply, or create any
-resource.
+This root is a source-level Azure implementation for the public portfolio
+deployment. D19D did not authenticate to Azure, initialize or access a remote
+backend, plan, apply, create a secret, push an image, or deploy an application.
+Provider plugins were initialized locally with `-backend=false` only for schema
+validation.
 
-## Scope
+## Final architecture
 
-The root defines:
+Terraform defines a resource group, VNet, Container Apps infrastructure subnet,
+private delegated PostgreSQL subnet and private DNS, Standard ACR, Container
+Apps Consumption environment, PostgreSQL Flexible Server, Key Vault, bounded
+Log Analytics, separate runtime/bootstrap/CI identities, narrow RBAC, optional
+GitHub OIDC federation bound to an Environment, manual bootstrap jobs, and the public
+HTTPS app. Federation is disabled by default until D19E/F deliberately enables
+the reviewed trust.
 
-- one resource group and common non-sensitive tags;
-- one VNet with dedicated Container Apps and PostgreSQL subnets;
-- PostgreSQL private DNS and VNet linkage;
-- Basic ACR with the admin and anonymous users disabled;
-- one user-assigned runtime identity with only `AcrPull` and
-  `Key Vault Secrets User` assignments;
-- a separate CI identity with ACR push and single-Container-App deployment
-  rights, plus optional parameterized GitHub OIDC federation;
-- an RBAC-enabled Key Vault foundation without secret payload resources;
-- Log Analytics and workspace-based Application Insights;
-- PostgreSQL Flexible Server, a database, and the `vector` allowlist setting;
-- one externally ingressed FastAPI Container App with managed-identity ACR and
-  Key Vault integration, `/healthz` and `/readyz` probes, and one replica.
+The application container is CPU-only. It contains the React build and FastAPI
+service, not GPT-OSS weights. Generation follows the existing tested route:
 
-It deliberately does not define AKS, a GPU/model service, Redis, a frontend,
-MCP, secret payloads, policy indexing, database schema execution, fictional
-seed data, or a public Prometheus service. GitHub federation remains disabled
-until real repository trust values are supplied.
+```text
+Azure Container App -> Hugging Face Inference Providers -> Groq
+                    -> openai/gpt-oss-20b
+```
 
-## File layout
+There is no Azure accelerator, model endpoint, model-weight storage, AKS, NAT
+Gateway, Private Endpoint, Front Door, Application Gateway, or API Management
+resource. Application Insights was removed because the application does not
+wire an Azure exporter; privacy-safe structured stdout still reaches bounded
+Log Analytics. Health checks never call an embedding model or GPT-OSS.
 
-| File | Responsibility |
-|---|---|
-| `versions.tf`, `providers.tf`, `backend.tf` | Terraform/AzureRM contract and empty remote backend declaration |
-| `variables.tf`, `locals.tf` | Validated inputs, deterministic names, and common tags |
-| `resource_group.tf`, `networking.tf` | Resource boundary and preferred private database network |
-| `registry.tf`, `identities.tf`, `key_vault.tf` | Image registry, runtime identity/RBAC, and secret-store foundation |
-| `observability.tf` | Log Analytics and workspace-based Application Insights |
-| `postgres.tf` | Private Flexible Server, database, and pgvector allowlist |
-| `container_apps.tf` | Container Apps environment and the single API app |
-| `outputs.tf` | Non-secret deployment identifiers and hostnames |
-| `terraform.tfvars.example` | Non-secret illustrative values only |
+## Explicit lifecycle stages
 
-## Version and provider policy
+`deployment_stage` prevents the circular first-deploy lifecycle:
 
-Terraform 1.11 or newer is required because the PostgreSQL bootstrap password
-uses an ephemeral input and AzureRM's write-only
-`administrator_password_wo` argument. AzureRM is constrained to the compatible
-5.x release line. Backend-disabled D13 initialization with a checksum-verified
-temporary Terraform 1.16.0 binary resolved AzureRM 5.3.0. The generated
-`.terraform.lock.hcl` records that provider selection and official checksums;
-review and commit it with the configuration.
+1. `foundation` creates durable infrastructure, ACR, identities, database, Key
+   Vault, and the Container Apps environment. OIDC federation remains disabled
+   unless deliberately enabled after its GitHub trust is ready. Foundation
+   creates neither a job nor an app and does not require an image or secret
+   reference.
+2. The protected Azure workflow can be manually dispatched in `build_only`
+   mode. It builds the production image, pushes it to ACR, resolves the digest,
+   and does not change a Container App.
+3. Authorized operations create three separate Key Vault secrets: database
+   administrator bootstrap password, runtime database password, and the Azure
+   inference-only HF token. Terraform never manages their values.
+4. `bootstrap` creates two manual Container Apps Jobs using that immutable
+   image. Terraform never starts them. An operator starts the migration job,
+   verifies success, then starts the policy-index job and verifies success.
+5. `application` removes the temporary jobs/bootstrap identity and creates the
+   digest-pinned app only after database and policy readiness are proven.
+6. Steady-state `main` pushes deploy through CI and the independent Azure CD
+   workflow. Infrastructure changes remain reviewed Terraform operations.
+
+For a later schema release, the reviewed `maintenance` stage adds the manual
+jobs and temporary bootstrap identity without removing the running app. After
+the additive job is verified, return to `application` to remove that access.
+
+Never jump directly from `foundation` to `application`. Never run migration as
+an app entrypoint, startup hook, Terraform provisioner, or ordinary release
+step. A failed additive migration can be rerun explicitly; no destructive SQL
+is executed automatically.
+
+## Database and pgvector bootstrap
+
+The database defaults are `B_Standard_B1ms`, fixed 32 GiB/P4 with auto-grow
+disabled, PostgreSQL 17, seven-day backup, no HA, no geo-redundant backup,
+private connectivity, and TLS 1.2 or newer. Terraform allowlists `vector` with
+`azure.extensions`.
+
+The manual `migrate` job runs `scripts/migrate_database.py --seed-demo-data`.
+It serializes executions with a PostgreSQL advisory lock and records migration
+version 1. The additive migration:
+
+- runs `CREATE EXTENSION IF NOT EXISTS vector`;
+- creates the operations, security, approval-session, execution-ledger,
+  LangGraph checkpoint, and pgvector policy structures;
+- creates/rotates the runtime login from a Key Vault-provided password;
+- grants only read access to demo records and policy evidence, column-scoped
+  update access to request status, and the required checkpoint/approval ledger
+  DML privileges;
+- optionally loads only the repository's fictional operations records.
+
+The separate `policy-index` job is the only bootstrap step that runs Qwen CPU
+embeddings. Its model is preloaded into the immutable image; it is never a
+health check or normal deployment side effect. `/readyz` verifies the database,
+checkpoint structures, vector extension, policy table, nonempty policy index,
+and HF credential configuration without invoking either model.
+
+## Secret boundary
+
+No `azurerm_key_vault_secret` resource exists. Secret values are absent from
+Terraform, tfvars, state, image layers, workflows, the frontend, and logs. The
+three versionless URI variables point to secrets created out of band. Terraform
+scopes `Key Vault Secrets User` to individual secret ARM resources:
+
+- the short-lived bootstrap identity can read the two database secrets;
+- the runtime identity can read the runtime database password and Azure HF
+  inference token, but not the database administrator password;
+- the CI identity cannot read any Key Vault secret.
+
+The Azure HF token should be an inference-only token from the same HF account as
+the Space token, but it is a different token for independent revocation. The
+Hugging Face Space secret and deployment workflow are unchanged and independent.
+
+## Recruiter-facing security posture
+
+An empty `container_app_allowed_ingress_cidrs` list exposes Container Apps'
+managed HTTPS hostname publicly. Optional restricted CIDRs remain supported.
+The compiled React frontend is enabled.
+
+The Azure profile requires Entra authentication configuration and separately
+enables anonymous read/query access. Anonymous recruiters may view service
+metadata, synthetic access records, and ask metered Policy & Evidence questions.
+They receive only the backend `agent.query` permission. Proposal and approval
+routes still require a valid Entra token with `actions.propose` or
+`approvals.resume`; selecting an Operator/Approver persona in React grants
+nothing. A 401 on an anonymous attempted action is the intentional portfolio
+demonstration of the boundary. Production operators can exercise the complete
+durable governed path with real Entra assignments.
+
+The invariant remains: model proposal -> deterministic validation,
+authorization, and policy controls -> explicit approval -> fixed executor ->
+durable audit state. The LLM is not the security boundary.
+
+## Cost posture
+
+Defaults align with the new-customer allowances: Standard ACR, one B1ms server
+with 32 GiB, Container Apps Consumption, and one 1-vCPU/2-GiB app that can scale
+to zero. Durable approval state makes replica shutdown safe; cold-start latency
+is the accepted portfolio tradeoff. The app stays at max one replica until live
+load testing. Log Analytics retains 30 days with a 1-GiB daily cap. No always-on
+application replica or decorative Application Insights resource is created.
+The app permits exactly one replica initially, uses `OPENWEIGHT_METRICS_ENABLED=false`,
+and deploys no GPU. Durable workflow state uses `PostgresSaver` plus the
+transactional execution ledger.
+
+Free allowances and service availability are offer-, subscription-, region-,
+and time-dependent. Review the portal cost estimate and the existing $70 budget
+alerts before every apply. Spending protection remains enabled; this design does
+not require conversion to Pay-As-You-Go.
 
 ## Remote state
 
-`backend.tf` declares an empty `azurerm` backend. A later authorized bootstrap
-must create a dedicated state resource group, storage account, private
-container, locking/access policy, and least-privilege identity. Backend values
-belong in a local ignored `*.backend.hcl` file or trusted CI configuration, not
-in source. Never use a storage key, SAS token, or client secret in this tree.
-
-Terraform state contains infrastructure identifiers and provider-computed
-sensitive attributes. Protect it with encryption, RBAC, versioning, retention,
-and restricted logs even though the administrator password uses a write-only
-argument. Local `.tfstate`, plan, private tfvars, override, crash, and plugin
-files are ignored by both Git and the Docker build context.
-
-## Variables and naming
-
-Copy `terraform.tfvars.example` to an ignored private tfvars file only after
-choosing a location based on service availability, cost, residency, and
-inference latency. Replace the illustrative globally unique suffix and immutable
-image digest. Replace the RFC 5737 documentation-only ingress CIDR with the
-approved caller or edge egress range; unrestricted IPv4 and IPv6 ranges are
-rejected. Set `container_app_external_ingress_enabled=false` for an internal-only
-deployment. Names derive from `project_name`, `environment`, `region_code`, and
-`unique_suffix` while respecting the stricter ACR/Key Vault/PostgreSQL name forms.
-Common tags identify project, environment, Terraform ownership, purpose, and
-optional non-sensitive component metadata.
-
-Cost-conscious defaults use Basic ACR, 0.5 vCPU/1 GiB API compute, one replica,
-a burstable PostgreSQL SKU with 32 GiB storage, seven-day backup retention,
-30-day Log Analytics retention, a 1 GiB daily ingestion cap, 25% Application
-Insights sampling, no database HA/geo-backup, and no Azure GPU. Review current
-regional availability, quota, supported CPU/memory combinations, recovery
-objectives, and prices before any plan.
-
-The shipped subnet defaults are non-overlapping children of the default VNet
-and are covered by repository tests. Terraform validates CIDR syntax and the
-Container Apps `/23` minimum, while AzureRM/Azure validates caller-supplied
-VNet/subnet relationships during a future plan. Do not approve a plan until
-those relationships and service delegations have been reviewed.
-
-## Secret and PostgreSQL bootstrap boundary
-
-No secret value or `azurerm_key_vault_secret` resource exists in D13 or D14.
-
-Flexible Server currently requires a password-authenticated administrative
-bootstrap because the application does not yet implement PostgreSQL Entra token
-acquisition. Supply `postgresql_administrator_password` only out of band. It is
-an ephemeral Terraform variable passed to AzureRM's write-only password field,
-so it is not written to plan or state; its version variable drives rotation.
-The server minimum TLS version is explicitly configured (TLS 1.2 by default;
-TLS 1.3 is selectable after client compatibility testing). D14 cloud
-configuration uses certificate-verifying `sslmode=verify-full` with system
-trust roots.
-
-The API must not use that administrator. The D14 bootstrap contract now:
-
-1. expects an administrator to create the least-privilege
-   `postgresql_application_login` role out of band;
-2. applies narrow grants using `scripts/setup_security.py`;
-3. places its password in Key Vault through authorized operations and supplies
-   the versionless secret URI as
-   `postgresql_application_password_secret_id`;
-4. enforces PostgreSQL client TLS verification in cloud configuration.
-
-Replacing password auth with Entra workload authentication remains a future
-driver/token-lifecycle improvement rather than a fabricated completed feature.
-
-The Container App is structurally defined now, but a future apply is not
-operationally complete until that D14 role and referenced secret exist. This is
-an intentional fail-closed boundary, not a placeholder password.
-
-Terraform allowlists `vector` through `azure.extensions`; it does not run
-`CREATE EXTENSION vector`. A controlled migration must create the extension in
-the application database, create schemas/roles, and then optionally run the
-fictional seed. Model-based policy indexing is a separate explicit lifecycle
-and is never a Terraform provisioner or startup probe. The database resource
-uses `prevent_destroy`; intentional disposable-demo teardown requires a reviewed
-configuration change.
-
-## Approval durability and replicas
-
-PostgreSQL mode uses LangGraph `PostgresSaver`, durable row-locked approval
-sessions, and a transactional execution ledger. The effect claim, controlled
-status update, and terminal result commit atomically. Local/test mode still
-offers `InMemorySaver` explicitly.
-
-The reference deployment remains at exactly one replica and does not permit
-scale-to-zero until the actual Azure bootstrap, connection capacity, failure
-injection, and multi-replica load behavior are verified. Application durability
-is implemented; production rollout evidence is deliberately not invented.
-
-## Observability and metrics exposure
-
-The Container Apps environment forwards structured stdout logs to Log
-Analytics. Application Insights is workspace-based and remains the future D10
-OpenTelemetry target. Tracing stays disabled until a later deployment supplies
-and validates a cloud exporter configuration; Azure-specific calls do not
-enter business code.
-
-`OPENWEIGHT_METRICS_ENABLED=false` is set for the externally ingressed app
-because the current ingress cannot privately isolate `/metrics` by route. The
-application also supports an authenticated metrics mode for non-public
-environments. Prompts, responses, reasoning, credentials, raw documents, and
-sensitive payloads remain outside telemetry.
-
-## External model boundary
-
-The Container App is CPU-only and receives an HTTPS inference endpoint and
-model alias as non-secret configuration. D13 provisions no GPU resources,
-model weights, model container, or provider credential. If a future external
-endpoint needs a credential, operations must add it through Key Vault and the existing
-backend abstraction without coupling the API lifecycle to model hosting.
+[`state-bootstrap/README.md`](state-bootstrap/README.md) defines the separate
+one-time Standard LRS state foundation. It uses a private container, Entra data
+plane RBAC, shared keys disabled, TLS, versioning/change feed, soft deletion,
+and destroy guards. D19D did not create it. Backend values remain outside Git;
+never use a storage key, SAS token, or client secret.
 
 ## Static validation
 
-On a workstation with Terraform installed:
+Formatting requires no provider or backend access:
 
 ```bash
-cd infra/terraform
-terraform fmt -recursive
-terraform init -backend=false
-terraform validate
-terraform fmt -check -recursive
-```
-
-`init -backend=false` may download the public AzureRM provider but does not
-authenticate or provision. Commit `.terraform.lock.hcl` after reviewing its
-provider selection and checksums; never commit `.terraform/`.
-
-Repository invariants are checked without Azure or Terraform credentials:
-
-```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_terraform_configuration.py
-.venv/bin/python -m pip check
+terraform fmt -check -recursive infra/terraform
+PYTHONPATH=src python -m pytest -q tests/test_terraform_configuration.py
 git diff --check
 ```
 
-## Future reviewed deployment sequence
-
-Only after a real repository/tenant, secret bootstrap, remote state, and
-deployment authorization are approved:
-
-```bash
-terraform init -backend-config=demo.backend.hcl
-terraform fmt -check -recursive
-terraform validate
-terraform plan -out=reviewed.tfplan
-# Human review of resources, replacements, cost, RBAC, networking, and secrets.
-terraform apply reviewed.tfplan
-```
-
-The plan file is sensitive and ignored. A real deployment should use GitHub
-OIDC federation and short-lived Azure authorization once a repository and trust
-policy exist. D13 neither changes the existing CI workflow nor invents a GitHub
-subject.
+D19D validation ran `terraform init -backend=false -lockfile=readonly` and
+`terraform validate` for both roots against the pinned provider. Do not run
+backend initialization, `plan`, or `apply` until the D19E remote-state/bootstrap
+procedure is explicitly authorized.

@@ -29,7 +29,7 @@ export interface ServiceInfoResponse {
   service: string;
   version: string;
   environment: string;
-  deployment_profile: "local" | "huggingface";
+  deployment_profile: "local" | "huggingface" | "azure";
   backend: string;
   model_id: string;
   inference_provider: string;

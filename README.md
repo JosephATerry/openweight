@@ -188,7 +188,7 @@ demo sandbox.
 | --- | --- | --- | --- |
 | **Full local engineering** | Local GPT-OSS 20B; Qwen embeddings; PostgreSQL/pgvector policy store | Configurable JWT/RBAC; PostgreSQL checkpoints, approvals, and execution ledger | Implemented; local model execution requires suitable GPU resources and model artifacts |
 | **Public Hugging Face demo** | CPU-hosted React/FastAPI shell; remote GPT-OSS through Hugging Face Inference Providers and Groq; portable Qwen index | Simulated Demo Persona; synthetic process-local action/approval state | Live recruiter walkthrough; intentionally ephemeral and not a production identity system |
-| **Azure production reference** | External inference boundary; managed PostgreSQL/pgvector | OIDC/JWT, managed identities, Key Vault, durable approval/audit state | Terraform reference architecture only; no Azure environment is deployed |
+| **Azure portfolio reference** | React/FastAPI on Container Apps; HF Inference Providers -> Groq -> GPT-OSS 20B; managed PostgreSQL/pgvector | Anonymous read/query only; Entra JWT required for proposals/approvals; managed identities and Key Vault | Terraform plus CI-gated OIDC deployment implementation; no Azure environment is deployed |
 
 The public profile performs no startup, background, warm-up, or health-check
 inference. Metered requests have a finite timeout, zero application retries,
@@ -207,7 +207,7 @@ concurrency limit.
 | Interoperability | MCP 2026-07-28 using the official `mcp==2.1.1` SDK and seven bounded tools |
 | Observability | Structured JSON logs, Prometheus metrics, OpenTelemetry traces, privacy-safe request correlation |
 | Delivery | Multi-stage non-root Docker image, GitHub Actions CI, deterministic Space export, keyless deployment |
-| Cloud reference | Terraform for Azure Container Apps, PostgreSQL, Key Vault, managed identities, and observability |
+| Cloud reference | Staged Terraform and Azure OIDC CD for Container Apps, PostgreSQL/pgvector, Key Vault, managed identities, and bounded observability |
 
 ## CI/CD
 

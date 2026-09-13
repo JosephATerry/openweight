@@ -28,6 +28,7 @@ EXACT_FILES: dict[str, str] = {
     ),
     "docker/api/healthcheck.py": "docker/api/healthcheck.py",
     "scripts/index_policy_corpus.py": "scripts/index_policy_corpus.py",
+    "scripts/migrate_database.py": "scripts/migrate_database.py",
     "scripts/setup_operations.py": "scripts/setup_operations.py",
     "scripts/setup_security.py": "scripts/setup_security.py",
 }

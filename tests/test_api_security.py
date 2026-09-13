@@ -205,6 +205,35 @@ def test_health_and_readiness_are_public_but_product_api_requires_auth(keys) -> 
     assert response.json()["error"]["code"] == "authentication_required"
 
 
+def test_public_demo_read_does_not_authorize_governed_actions(keys) -> None:
+    application = app(keys, OPENWEIGHT_PUBLIC_READ_ENABLED="true")
+
+    info = call(application, "GET", "/v1/service-info")
+    query = call(
+        application,
+        "POST",
+        "/v1/policy/query",
+        json={"question": "What does the policy permit?"},
+    )
+    proposal = call(
+        application,
+        "POST",
+        "/v1/actions/access-requests/req-1/proposals",
+        json={"new_status": "approved"},
+    )
+    malformed = call(
+        application,
+        "GET",
+        "/v1/service-info",
+        headers={"Authorization": "Bearer malformed"},
+    )
+
+    assert info.status_code == 200
+    assert query.status_code == 200
+    assert proposal.status_code == 401
+    assert malformed.status_code == 401
+
+
 @pytest.mark.parametrize(
     "kind",
     ["invalid_signature", "wrong_issuer", "wrong_audience", "expired", "not_yet_valid"],

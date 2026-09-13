@@ -188,7 +188,7 @@ def create_app(
         verifier=token_verifier,
     )
     public_demo_gate = PublicDemoInferenceGate(
-        enabled=service_settings.deployment_profile == "huggingface",
+        enabled=service_settings.uses_huggingface_inference,
         concurrency_limit=service_settings.hf_inference_concurrency_limit,
         requests_per_window=service_settings.hf_rate_limit_requests,
         window_seconds=service_settings.hf_rate_limit_window_seconds,
@@ -538,12 +538,12 @@ def create_app(
             model_id=service_settings.gpt_oss_model_id,
             inference_provider=(
                 f"huggingface:{service_settings.hf_provider}"
-                if service_settings.deployment_profile == "huggingface"
+                if service_settings.uses_huggingface_inference
                 else "local_transformers"
             ),
             inference_configured=(
                 bool(service_settings.hf_token)
-                if service_settings.deployment_profile == "huggingface"
+                if service_settings.uses_huggingface_inference
                 else True
             ),
             inference_state=platform.inference_state,

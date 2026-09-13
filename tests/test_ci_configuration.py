@@ -10,6 +10,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 DEPLOY_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "deploy-huggingface.yml"
+AZURE_DEPLOY_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "deploy-azure.yml"
 DEPENDABOT_PATH = ROOT / ".github" / "dependabot.yml"
 SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 
@@ -24,6 +25,10 @@ def workflow() -> dict[str, object]:
 
 def deploy_workflow() -> dict[str, object]:
     return yaml.safe_load(read(DEPLOY_WORKFLOW_PATH))
+
+
+def azure_deploy_workflow() -> dict[str, object]:
+    return yaml.safe_load(read(AZURE_DEPLOY_WORKFLOW_PATH))
 
 
 def all_run_commands(configuration: dict[str, object]) -> str:
@@ -285,3 +290,80 @@ def test_deployment_uses_trusted_publisher_without_a_stored_secret() -> None:
     assert "/v1/agent/query" not in source
     assert "josephaterry/openweight" in source
     assert DEPLOY_WORKFLOW_PATH.name == "deploy-huggingface.yml"
+
+
+def test_azure_deployment_is_ci_gated_current_main_and_serialized() -> None:
+    configuration = azure_deploy_workflow()
+    trigger = configuration["on"]["workflow_run"]
+    deploy = configuration["jobs"]["deploy"]
+    condition = deploy["if"]
+    source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+
+    assert trigger == {
+        "workflows": ["CI"],
+        "types": ["completed"],
+        "branches": ["main"],
+    }
+    assert "vars.AZURE_DEPLOY_ENABLED == 'true'" in condition
+    assert "conclusion == 'success'" in condition
+    assert "event == 'push'" in condition
+    assert "head_repository.full_name == github.repository" in condition
+    assert configuration["concurrency"] == {
+        "group": "azure-production",
+        "cancel-in-progress": False,
+    }
+    assert deploy["environment"]["name"] == "azure-production"
+    assert "git ls-remote" in source
+    assert "pull_request_target" not in source
+
+
+def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
+    configuration = azure_deploy_workflow()
+    deploy = configuration["jobs"]["deploy"]
+    condition = deploy["if"]
+    source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+
+    assert condition.startswith("vars.AZURE_DEPLOY_ENABLED == 'true' &&")
+    assert "workflow_dispatch' && inputs.build_only" in condition
+    assert "AZURE_DEPLOY_ENABLED: ${{ vars.AZURE_DEPLOY_ENABLED }}" not in source
+    assert "secrets.AZURE_DEPLOY_ENABLED" not in source
+    assert "vars.AZURE_DEPLOY_ENABLED" not in all_run_commands(configuration)
+
+
+def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:
+    configuration = azure_deploy_workflow()
+    deploy = configuration["jobs"]["deploy"]
+    source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+    commands = all_run_commands(configuration)
+    action_references = [
+        step["uses"] for step in deploy["steps"] if "uses" in step
+    ]
+
+    assert configuration["permissions"] == {
+        "contents": "read",
+        "id-token": "write",
+    }
+    assert all(SHA_PIN.fullmatch(reference) for reference in action_references)
+    assert any(reference.startswith("azure/login@") for reference in action_references)
+    assert "${{ vars.AZURE_CLIENT_ID }}" in source
+    assert "${{ secrets." not in source
+    assert "AZURE_CLIENT_SECRET" not in source
+    assert "docker push" in commands
+    assert "az acr repository show" in commands
+    assert "@${digest}" in commands
+    assert "az containerapp update" in commands
+    assert "/healthz" in commands
+    assert "/readyz" in commands
+    assert "/v1/agent/query" not in commands
+    assert "index_policy_corpus" not in commands
+    assert "terraform apply" not in commands
+
+
+def test_hugging_face_and_azure_deployments_remain_independent() -> None:
+    huggingface = read(DEPLOY_WORKFLOW_PATH)
+    azure = read(AZURE_DEPLOY_WORKFLOW_PATH)
+
+    assert "azure/login" not in huggingface
+    assert "deploy_huggingface_space" not in azure
+    assert "HF_OIDC_RESOURCE" not in azure
+    assert "HF_TOKEN" not in azure

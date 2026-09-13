@@ -8,14 +8,19 @@ output "container_registry_login_server" {
   value       = azurerm_container_registry.main.login_server
 }
 
+output "container_registry_name" {
+  description = "ACR resource name used by deployment automation."
+  value       = azurerm_container_registry.main.name
+}
+
 output "container_app_name" {
   description = "FastAPI Container App name."
-  value       = azurerm_container_app.api.name
+  value       = local.container_app_name
 }
 
 output "container_app_fqdn" {
   description = "Managed HTTPS ingress hostname for the API."
-  value       = azurerm_container_app.api.ingress[0].fqdn
+  value       = try(azurerm_container_app.api[0].ingress[0].fqdn, null)
 }
 
 output "postgresql_server_fqdn" {
@@ -26,11 +31,6 @@ output "postgresql_server_fqdn" {
 output "key_vault_name" {
   description = "Key Vault foundation used for future runtime secrets."
   value       = azurerm_key_vault.main.name
-}
-
-output "application_insights_name" {
-  description = "Workspace-based Application Insights resource name."
-  value       = azurerm_application_insights.main.name
 }
 
 output "log_analytics_workspace_name" {
@@ -56,4 +56,14 @@ output "ci_identity_client_id" {
 output "ci_identity_principal_id" {
   description = "Non-secret principal ID of the isolated CI deployment identity."
   value       = azurerm_user_assigned_identity.ci.principal_id
+}
+
+output "database_migration_job_name" {
+  description = "Manual migration job name during the bootstrap stage."
+  value       = local.migration_job_name
+}
+
+output "policy_index_job_name" {
+  description = "Manual policy indexing job name during the bootstrap stage."
+  value       = local.policy_index_job_name
 }

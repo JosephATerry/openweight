@@ -11,6 +11,8 @@ resource "azurerm_container_app_environment" "main" {
 }
 
 resource "azurerm_container_app" "api" {
+  count = local.application_enabled ? 1 : 0
+
   name                         = local.container_app_name
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
@@ -32,6 +34,12 @@ resource "azurerm_container_app" "api" {
     name                = "postgres-application-password"
     identity            = azurerm_user_assigned_identity.runtime.id
     key_vault_secret_id = var.postgresql_application_password_secret_id
+  }
+
+  secret {
+    name                = "huggingface-inference-token"
+    identity            = azurerm_user_assigned_identity.runtime.id
+    key_vault_secret_id = var.huggingface_token_secret_id
   }
 
   ingress {
@@ -67,7 +75,7 @@ resource "azurerm_container_app" "api" {
 
     container {
       name   = "api"
-      image  = var.container_image
+      image  = coalesce(var.container_image, "invalid.invalid/not-configured@sha256:0000000000000000000000000000000000000000000000000000000000000000")
       cpu    = var.container_cpu
       memory = var.container_memory
 
@@ -79,11 +87,6 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "OPENWEIGHT_SERVICE_VERSION"
         value = var.application_version
-      }
-
-      env {
-        name  = "OPENWEIGHT_BUILD_SHA"
-        value = var.build_sha
       }
 
       env {
@@ -107,6 +110,61 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
+        name  = "OPENWEIGHT_DEPLOYMENT_PROFILE"
+        value = "azure"
+      }
+
+      env {
+        name  = "OPENWEIGHT_GPT_OSS_MODEL_ID"
+        value = var.gpt_oss_model_id
+      }
+
+      env {
+        name  = "OPENWEIGHT_HF_PROVIDER"
+        value = var.huggingface_provider
+      }
+
+      env {
+        name  = "OPENWEIGHT_HF_MAX_RETRIES"
+        value = "0"
+      }
+
+      env {
+        name  = "OPENWEIGHT_HF_TIMEOUT_SECONDS"
+        value = "60"
+      }
+
+      env {
+        name  = "OPENWEIGHT_HF_INFERENCE_CONCURRENCY_LIMIT"
+        value = "2"
+      }
+
+      env {
+        name  = "OPENWEIGHT_HF_RATE_LIMIT_REQUESTS"
+        value = "5"
+      }
+
+      env {
+        name  = "OPENWEIGHT_HF_RATE_LIMIT_WINDOW_SECONDS"
+        value = "60"
+      }
+
+      env {
+        name  = "OPENWEIGHT_HF_RATE_LIMIT_MAX_CLIENTS"
+        value = "1024"
+      }
+
+      env {
+        name  = "OPENWEIGHT_DEMO_EMBEDDING_MODEL"
+        value = "/app/models/qwen3-embedding-0.6b"
+      }
+
+      env {
+        name        = "HF_TOKEN"
+        secret_name = "huggingface-inference-token" # pragma: allowlist secret
+      }
+
+      env {
         name  = "OPENWEIGHT_DATABASE_REQUIRED"
         value = "true"
       }
@@ -127,18 +185,8 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
-        name  = "OPENWEIGHT_MUSE_BASE_URL"
-        value = var.external_inference_base_url
-      }
-
-      env {
-        name  = "OPENWEIGHT_MUSE_MODEL_ALIAS"
-        value = var.model_alias
-      }
-
-      env {
-        name  = "OPENWEIGHT_MUSE_TIMEOUT_SECONDS"
-        value = "300"
+        name  = "OPENWEIGHT_FRONTEND_ENABLED"
+        value = "true"
       }
 
       env {
@@ -174,6 +222,11 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "OPENWEIGHT_AUTH_ENABLED"
         value = tostring(var.product_auth_enabled)
+      }
+
+      env {
+        name  = "OPENWEIGHT_PUBLIC_READ_ENABLED"
+        value = tostring(var.public_read_enabled)
       }
 
       env {
@@ -259,4 +312,10 @@ resource "azurerm_container_app" "api" {
     azurerm_role_assignment.runtime_key_vault_secrets,
     azurerm_postgresql_flexible_server_configuration.extensions,
   ]
+
+  lifecycle {
+    # Steady-state CD owns only the immutable image field. Terraform continues
+    # to own configuration, identities, secrets, ingress, and scaling.
+    ignore_changes = [template[0].container[0].image]
+  }
 }

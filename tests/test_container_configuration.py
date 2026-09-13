@@ -171,6 +171,7 @@ def test_dockerignore_excludes_local_secrets_models_and_experiments() -> None:
     }.issubset(patterns)
     assert "!scripts/setup_operations.py" in patterns
     assert "!scripts/setup_security.py" in patterns
+    assert "!scripts/migrate_database.py" in patterns
     assert "!scripts/index_policy_corpus.py" in patterns
 
 

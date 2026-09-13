@@ -8,13 +8,30 @@ locals {
   container_registry_name     = substr("acr${replace(var.project_name, "-", "")}${replace(var.environment, "-", "")}${var.unique_suffix}", 0, 50)
   runtime_identity_name       = "id-${local.name_base}-api-${var.region_code}"
   ci_identity_name            = "id-${local.name_base}-ci-${var.region_code}"
+  bootstrap_identity_name     = "id-${local.name_base}-bootstrap-${var.region_code}"
   log_analytics_name          = "log-${local.name_base}-${var.region_code}"
-  application_insights_name   = "appi-${local.name_base}-${var.region_code}"
   key_vault_name              = substr("kv-${var.unique_suffix}-${local.name_base}", 0, 24)
   postgresql_server_name      = substr("psql-${var.unique_suffix}-${local.name_base}", 0, 63)
   postgresql_private_dns_name = "${local.name_base}.postgres.database.azure.com"
   container_apps_environment  = "cae-${local.name_base}-${var.region_code}"
   container_app_name          = substr("ca-${local.name_base}-api", 0, 32)
+  migration_job_name          = substr("caj-${local.name_base}-migrate", 0, 32)
+  policy_index_job_name       = substr("caj-${local.name_base}-index", 0, 32)
+  bootstrap_enabled           = contains(["bootstrap", "maintenance"], var.deployment_stage)
+  application_enabled         = contains(["application", "maintenance"], var.deployment_stage)
+  image_consumers_enabled     = local.bootstrap_enabled || local.application_enabled
+  postgresql_application_secret_name = (
+    var.postgresql_application_password_secret_id == null ? null :
+    element(split("/", var.postgresql_application_password_secret_id), 4)
+  )
+  postgresql_administrator_secret_name = (
+    var.postgresql_administrator_password_secret_id == null ? null :
+    element(split("/", var.postgresql_administrator_password_secret_id), 4)
+  )
+  huggingface_token_secret_name = (
+    var.huggingface_token_secret_id == null ? null :
+    element(split("/", var.huggingface_token_secret_id), 4)
+  )
   github_oidc_subject = var.github_environment == null ? (
     "repo:${var.github_repository_owner}/${var.github_repository}:ref:refs/heads/${var.github_branch}"
     ) : (

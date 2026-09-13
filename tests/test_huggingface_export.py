@@ -36,6 +36,7 @@ def test_export_is_an_explicit_public_demo_allowlist(tmp_path: Path) -> None:
     assert "data/policies/01_privileged_infrastructure_access.md" in paths
     assert "deploy/huggingface/policy_index.npz" in paths
     assert "scripts/setup_operations.py" in paths
+    assert "scripts/migrate_database.py" in paths
     assert not any(path.startswith("data/evals/") for path in paths)
     assert not any(path.startswith("data/training/") for path in paths)
     assert not any(path.startswith("mlruns/") for path in paths)

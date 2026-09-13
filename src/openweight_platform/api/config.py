@@ -34,7 +34,7 @@ MCP_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$")
 CHECKPOINT_BACKENDS = ("memory", "postgres")
 METRICS_ACCESS_MODES = ("public", "protected", "disabled")
 POSTGRES_SSL_MODES = ("disable", "prefer", "require", "verify-ca", "verify-full")
-DEPLOYMENT_PROFILES = ("local", "huggingface")
+DEPLOYMENT_PROFILES = ("local", "huggingface", "azure")
 HF_PROVIDER_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 DEFAULT_HF_PROVIDER = "groq"
 DEFAULT_HF_TIMEOUT_SECONDS = 60.0
@@ -161,7 +161,7 @@ class ServiceSettings:
     log_level: str
     api_host: str
     api_port: int
-    deployment_profile: Literal["local", "huggingface"]
+    deployment_profile: Literal["local", "huggingface", "azure"]
     backend_name: str
     max_new_tokens: int
     gpt_oss_model_id: str
@@ -194,6 +194,7 @@ class ServiceSettings:
     observability_service_name: str
     otlp_endpoint: str | None = field(repr=False)
     auth_enabled: bool = False
+    public_read_enabled: bool = False
     auth_issuer: str | None = None
     auth_audience: str | None = None
     auth_jwks_url: str | None = field(default=None, repr=False)
@@ -310,6 +311,11 @@ class ServiceSettings:
         elif metrics_access_mode == "disabled":
             metrics_enabled = False
         auth_enabled = _boolean(values, "OPENWEIGHT_AUTH_ENABLED", False)
+        public_read_enabled = _boolean(
+            values,
+            "OPENWEIGHT_PUBLIC_READ_ENABLED",
+            False,
+        )
         auth_issuer = _optional_text(values, "OPENWEIGHT_AUTH_ISSUER")
         auth_audience = _optional_text(values, "OPENWEIGHT_AUTH_AUDIENCE")
         auth_jwks_url = _optional_text(values, "OPENWEIGHT_AUTH_JWKS_URL")
@@ -525,6 +531,21 @@ class ServiceSettings:
                 errors.append(
                     "Hugging Face demo profile disables external web search"
                 )
+        if deployment_profile == "azure":
+            if not database_required:
+                errors.append("Azure profile requires PostgreSQL")
+            if checkpoint_backend != "postgres":
+                errors.append("Azure profile requires PostgreSQL checkpointing")
+            if backend_name != "gpt-oss":
+                errors.append("Azure profile requires gpt-oss")
+            if gpt_oss_model_id != DEFAULT_GPT_OSS_MODEL_ID:
+                errors.append("Azure profile requires openai/gpt-oss-20b")
+            if web_enabled:
+                errors.append("Azure profile disables external web search")
+            if not auth_enabled:
+                errors.append(
+                    "Azure profile requires authentication for governed actions"
+                )
 
         if web_enabled and not tavily_configured:
             errors.append("web search is enabled but TAVILY_API_KEY is missing")
@@ -676,6 +697,7 @@ class ServiceSettings:
             observability_service_name=observability_service_name,
             otlp_endpoint=otlp_endpoint,
             auth_enabled=auth_enabled,
+            public_read_enabled=public_read_enabled,
             auth_issuer=auth_issuer,
             auth_audience=auth_audience,
             auth_jwks_url=auth_jwks_url,
@@ -702,7 +724,7 @@ class ServiceSettings:
             reasoning_strength=self.reasoning_strength,  # type: ignore[arg-type]
             inference_mode=(
                 "huggingface"
-                if self.deployment_profile == "huggingface"
+                if self.uses_huggingface_inference
                 else "local"
             ),
             huggingface_token=self.hf_token,
@@ -710,6 +732,12 @@ class ServiceSettings:
             huggingface_timeout_seconds=self.hf_timeout_seconds,
             huggingface_max_retries=self.hf_max_retries,
         )
+
+    @property
+    def uses_huggingface_inference(self) -> bool:
+        """Return whether generation uses the shared routed HF client."""
+
+        return self.deployment_profile in {"huggingface", "azure"}
 
 
 __all__ = [

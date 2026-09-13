@@ -565,7 +565,7 @@ class _LazyPolicyRetriever:
 
             self._engine, self._store = create_policy_vector_store(
                 self._settings.database_config,
-                QwenEmbeddings(),
+                QwenEmbeddings(model_id=self._settings.demo_embedding_model),
                 initialize=False,
             )
         return self._store
@@ -779,9 +779,9 @@ class DefaultPlatformRuntime:
         self._operations_lookup_lock = threading.RLock()
         self._remote_inference_state: InferenceState = (
             "unconfigured"
-            if settings.deployment_profile == "huggingface" and not settings.hf_token
+            if settings.uses_huggingface_inference and not settings.hf_token
             else "not_used"
-            if settings.deployment_profile == "huggingface"
+            if settings.uses_huggingface_inference
             else "not_initialized"
         )
 
@@ -791,7 +791,7 @@ class DefaultPlatformRuntime:
 
     @property
     def inference_state(self) -> InferenceState:
-        if self._settings.deployment_profile == "huggingface":
+        if self._settings.uses_huggingface_inference:
             return self._remote_inference_state
         return "loaded" if self._backend_loaded else "not_initialized"
 
@@ -819,6 +819,8 @@ class DefaultPlatformRuntime:
             states.append(self._database_readiness())
             if self._settings.checkpoint_backend == "postgres":
                 states.append(self._checkpoint_readiness())
+            if self._settings.deployment_profile == "azure":
+                states.append(self._policy_index_readiness())
         web_ready = self._settings.web_enabled and self._settings.tavily_configured
         states.append(
             DependencyStatus(
@@ -855,7 +857,7 @@ class DefaultPlatformRuntime:
         return states
 
     def _model_backend_readiness(self) -> DependencyStatus:
-        if self._settings.deployment_profile != "huggingface":
+        if not self._settings.uses_huggingface_inference:
             return DependencyStatus(
                 name="model_backend",
                 status="ready",
@@ -863,14 +865,55 @@ class DefaultPlatformRuntime:
                 detail="configured for lazy initialization",
             )
         configured = bool(self._settings.hf_token)
+        required = self._settings.deployment_profile == "azure"
         return DependencyStatus(
             name="model_backend",
             status="ready" if configured else "unavailable",
-            required=False,
+            required=required,
             detail=(
                 "remote provider configured; no inference probe performed"
                 if configured
                 else "HF_TOKEN is not configured; no inference probe performed"
+            ),
+        )
+
+    def _policy_index_readiness(self) -> DependencyStatus:
+        """Check Azure policy structures without loading an embedding or LLM."""
+
+        config = self._settings.database_config
+        ready = False
+        if config is not None:
+            try:
+                with psycopg.connect(
+                    **config.connect_kwargs,
+                    connect_timeout=self._settings.database_probe_timeout_seconds,
+                ) as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """
+                            SELECT
+                                EXISTS (
+                                    SELECT 1 FROM pg_extension WHERE extname = 'vector'
+                                ),
+                                to_regclass('public.policy_chunks') IS NOT NULL,
+                                CASE
+                                    WHEN to_regclass('public.policy_chunks') IS NULL
+                                    THEN false
+                                    ELSE EXISTS (SELECT 1 FROM public.policy_chunks)
+                                END
+                            """
+                        )
+                        ready = cursor.fetchone() == (True, True, True)
+            except Exception:
+                ready = False
+        return DependencyStatus(
+            name="policy_retrieval",
+            status="ready" if ready else "unavailable",
+            required=True,
+            detail=(
+                "pgvector policy index available"
+                if ready
+                else "pgvector policy index probe failed"
             ),
         )
 
@@ -982,7 +1025,7 @@ class DefaultPlatformRuntime:
         )
 
     def _execute_query(self, question: str, *, request_id: str) -> AgentExecution:
-        if self._settings.deployment_profile == "huggingface":
+        if self._settings.uses_huggingface_inference:
             raise InvalidRequestError
         with self._agent_lock:
             try:
@@ -1109,7 +1152,7 @@ class DefaultPlatformRuntime:
 
         with self._agent_lock:
             try:
-                if self._settings.deployment_profile == "huggingface":
+                if self._settings.uses_huggingface_inference:
                     self._remote_inference_state = (
                         "requesting" if self._settings.hf_token else "unconfigured"
                     )
@@ -1122,25 +1165,25 @@ class DefaultPlatformRuntime:
                     on_text=on_text,
                 )
             except (DependencyUnavailableError, UnsafeResultError):
-                if self._settings.deployment_profile == "huggingface":
+                if self._settings.uses_huggingface_inference:
                     self._remote_inference_state = (
                         "unavailable" if self._settings.hf_token else "unconfigured"
                     )
                 raise
             except ValueError as error:
-                if self._settings.deployment_profile == "huggingface":
+                if self._settings.uses_huggingface_inference:
                     self._remote_inference_state = (
                         "unavailable" if self._settings.hf_token else "unconfigured"
                     )
                 raise InvalidRequestError from error
             except Exception as error:
-                if self._settings.deployment_profile == "huggingface":
+                if self._settings.uses_huggingface_inference:
                     self._remote_inference_state = (
                         "unavailable" if self._settings.hf_token else "unconfigured"
                     )
                 raise DependencyUnavailableError from error
 
-        if self._settings.deployment_profile == "huggingface":
+        if self._settings.uses_huggingface_inference:
             self._remote_inference_state = "available"
 
         if result.evidence_sufficient and not result.citation_valid:

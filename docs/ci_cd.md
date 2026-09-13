@@ -100,7 +100,7 @@ allowlist. It maps `deploy/huggingface/README.template.md` to the Space root
 - application Python source;
 - the synthetic policy corpus under `data/policies/`;
 - the portable policy index and metadata;
-- the three setup/index scripts copied by the Dockerfile;
+- the four explicit setup/migration/index scripts copied by the Dockerfile;
 - the container health-check script.
 
 The exporter never traverses `data/evals/` or `data/training/`. It rejects
@@ -141,6 +141,42 @@ CI/CD builds and uploads source but does not intentionally call GPT-OSS. It
 does not change Hugging Face hardware, billing, inference-provider settings, or
 the Space runtime secret. Runtime inference remains metered separately under
 the Space's existing `HF_TOKEN` and account settings.
+
+## Independent Azure deployment
+
+`.github/workflows/deploy-azure.yml` is a second, independent CD target. Its
+deploy job is disabled unless the repository-level, non-secret variable
+`AZURE_DEPLOY_ENABLED` is exactly `true`. An absent or differently valued gate
+skips the job before Azure login, so merging D19D does not require or create the
+`azure-production` Environment and does not produce a failed deployment check.
+Only set the gate after the environment, federation, variables, and foundation
+have been deliberately bootstrapped.
+
+Once enabled, a successful push-triggered `CI` run on canonical `main` starts
+the job; it rejects fork/PR workflow runs and rechecks that the tested SHA is
+still current main. The `azure-production` GitHub Environment and matching
+Terraform federated subject gate issuance of the short-lived Azure token.
+Deployments are serialized and never cancel an in-progress production release.
+
+The Environment must define non-secret variables `AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`,
+`AZURE_CONTAINER_REGISTRY`, and `AZURE_CONTAINER_APP`. No Azure client secret,
+registry password, database credential, or HF token enters GitHub Actions.
+
+The workflow builds the production image, pushes a source-SHA tag, resolves the
+ACR manifest digest, and updates the single Container App to the immutable
+`repository@sha256:...` reference. It waits for the new revision, verifies the
+deployed digest, and calls only `/healthz` and `/readyz`; neither endpoint makes
+a model request. The summary records the previous ready revision so rollback is
+a deliberate reviewed revision activation, not an automatic hidden mutation.
+
+A manual `build_only` dispatch exists for first-deploy bootstrap. It is also
+disabled until `AZURE_DEPLOY_ENABLED` is exactly `true`; once enabled, it can
+push the initial digest but cannot deploy an application or bypass successful
+CI.
+Database migration and policy indexing are separately triggered Container Apps
+Jobs and are never part of steady-state CD. The Azure workflow does not upload
+to Hugging Face, and the Hugging Face workflow does not authenticate to Azure.
 
 ## Local parity
 

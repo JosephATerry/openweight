@@ -84,9 +84,9 @@ semantics rather than an MCP-specific in-memory retry map. The resume tool
 accepts only an approval ID, decision, and optional comment; it cannot replace
 the proposal's action parameters.
 
-The current Azure reference remains at one replica until cloud bootstrap,
-failure injection, connection-capacity, and multi-replica load testing are
-complete.
+The Azure portfolio may scale to zero when idle but remains capped at one
+replica until cloud bootstrap, failure injection, connection-capacity, and
+multi-replica load testing are complete.
 
 ## Resources and prompts
 

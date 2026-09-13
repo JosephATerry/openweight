@@ -117,13 +117,20 @@ UPSERT_ACCESS_REQUESTS = """
 def setup_operations_database(config: PostgresConfig) -> dict[str, int]:
     """Create operations tables and idempotently upsert their fictional seeds."""
 
+    setup_operations_schema(config)
     with psycopg.connect(**config.connect_kwargs) as connection:
         with connection.cursor() as cursor:
-            for statement in SCHEMA_STATEMENTS:
-                cursor.execute(statement)
-
             cursor.executemany(UPSERT_EMPLOYEES, employee_seed_rows())
             cursor.executemany(UPSERT_CONTRACTORS, contractor_seed_rows())
             cursor.executemany(UPSERT_ACCESS_REQUESTS, access_request_seed_rows())
 
     return operations_seed_counts()
+
+
+def setup_operations_schema(config: PostgresConfig) -> None:
+    """Create only operational structures, without inserting demo records."""
+
+    with psycopg.connect(**config.connect_kwargs) as connection:
+        with connection.cursor() as cursor:
+            for statement in SCHEMA_STATEMENTS:
+                cursor.execute(statement)

@@ -5,26 +5,31 @@ region_code   = "eus"
 environment   = "demo"
 project_name  = "owp"
 unique_suffix = "replace123"
+deployment_stage = "foundation"
 
+# Set only after the foundation exists and Azure CD has pushed the image.
 container_image = "acrowpdemoreplace123.azurecr.io/openweight-platform-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
-# RFC 5737 documentation range only. Replace with the intended caller/edge
-# egress CIDR before deployment; unrestricted 0.0.0.0/0 is rejected.
-container_app_allowed_ingress_cidrs = ["198.51.100.0/24"]
+# Empty means public managed HTTPS for the recruiter portfolio. Supplying
+# restricted CIDRs switches to a private-audience posture.
+container_app_allowed_ingress_cidrs = []
 
-external_inference_base_url = "https://inference.example.invalid/v1"
-auth_issuer                = "https://login.example.invalid/tenant-id/v2.0"
-auth_audience              = "api://openweight-platform"
-auth_jwks_url              = "https://login.example.invalid/tenant-id/discovery/v2.0/keys"
+auth_issuer   = "https://login.example.invalid/tenant-id/v2.0"
+auth_audience = "api://openweight-platform"
+auth_jwks_url = "https://login.example.invalid/tenant-id/discovery/v2.0/keys"
 
-# Keep false until a real GitHub remote and protected trust boundary exist.
+# Keep false through foundation bootstrap. Deliberately enable only after the
+# protected GitHub Environment and reviewed trust values exist.
 github_federation_enabled = false
-github_repository_owner   = "placeholder-owner"
-github_repository         = "placeholder-repository"
+github_repository_owner   = "JosephATerry"
+github_repository         = "openweight"
+github_environment        = "azure-production"
 
-# Authorized bootstrap operations must create the application role and this secret.
-# This URI is a reference only; no secret value belongs in tfvars.
+# Authorized operations create these secrets between the foundation and
+# bootstrap stages. These are references only; values never belong in tfvars.
+postgresql_administrator_password_secret_id = "https://kv-replace123-owp-demo.vault.azure.net/secrets/postgres-admin-password"
 postgresql_application_password_secret_id = "https://kv-replace123-owp-demo.vault.azure.net/secrets/postgres-application-password"
+huggingface_token_secret_id               = "https://kv-replace123-owp-demo.vault.azure.net/secrets/huggingface-inference-token"
 
 # Deliberately omitted: postgresql_administrator_password. Supply that ephemeral
 # bootstrap value out of band (for example TF_VAR_postgresql_administrator_password)

@@ -14,7 +14,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   sku_name                     = var.postgresql_sku_name
   storage_mb                   = var.postgresql_storage_mb
   storage_tier                 = var.postgresql_storage_tier
-  auto_grow_enabled            = true
+  auto_grow_enabled            = false
   backup_retention_days        = var.postgresql_backup_retention_days
   geo_redundant_backup_enabled = var.postgresql_geo_redundant_backup_enabled
   zone                         = var.postgresql_zone
@@ -60,6 +60,6 @@ resource "azurerm_postgresql_flexible_server_database" "application" {
   }
 }
 
-# CREATE EXTENSION vector, schema setup, the fictional seed, application-role
-# creation, and model-based policy indexing remain explicit post-provisioning
-# operations. Terraform does not execute them.
+# The bootstrap-stage manual jobs explicitly create vector, schemas, the runtime
+# role/grants, checkpoints, and fictional portfolio records. Policy indexing is
+# a separate manual job. Terraform never executes either job during apply.

@@ -117,5 +117,7 @@ def test_frontend_documentation_states_the_security_and_demo_boundaries() -> Non
     assert "custom React and TypeScript single-page" in documentation
     assert "deployed Hugging Face Docker Space" in " ".join(documentation.split())
     assert "changes interface affordances only and never grants server permissions" in documentation
-    assert "public profile separately uses synthetic state" in documentation
-    assert "authentication disabled for the recruiter walkthrough" in documentation
+    assert "Hugging Face profile separately uses synthetic state" in documentation
+    assert "authentication disabled" in documentation
+    assert "Azure portfolio profile permits anonymous" in documentation
+    assert "proposals and approvals still require Entra tokens" in documentation

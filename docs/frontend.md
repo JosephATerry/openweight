@@ -36,7 +36,7 @@ MCP replacement.
   checkpoints and the execution ledger remain the full durable boundary.
 - **System** truthfully diagrams React and MCP as two surfaces over the same
   FastAPI security, LangGraph, PostgreSQL/pgvector, and controlled-executor
-  core. Azure architecture exists but is not deployed.
+  core. Azure architecture and deployment automation exist but are not deployed.
 
 The visual system uses native CSS, responsive layouts, semantic HTML, visible
 focus treatment, native dialog semantics, text-plus-color status indicators,
@@ -73,8 +73,10 @@ Only public browser configuration belongs in Vite variables:
 - `VITE_DEMO_MODE=true` shows the explicitly labelled Demo Persona selector. It
   changes interface affordances only and never grants server permissions.
   In authenticated deployments, the server still validates every bearer token
-  and permission; the public profile separately uses synthetic state with
-  authentication disabled for the recruiter walkthrough.
+  and permission. The Hugging Face profile separately uses synthetic state with
+  authentication disabled. The Azure portfolio profile permits anonymous
+  read/query access only; proposals and approvals still require Entra tokens,
+  regardless of the selected demo persona.
 
 Never place signing keys, database credentials, Key Vault values, client
 secrets, or provider tokens in `VITE_*`: Vite embeds them in public assets.
@@ -111,10 +113,10 @@ locked Node builder -> frontend/dist -> non-root Python runtime
 The final process remains `python -m openweight_platform.api.run` as UID/GID
 10001. `OPENWEIGHT_FRONTEND_ENABLED=true` and
 `OPENWEIGHT_FRONTEND_DIST_DIR=/app/frontend/dist` enable static delivery in
-Compose. Compose also supplies the public build argument
-`VITE_DEMO_MODE=true`; cloud/release builds retain the Dockerfile's safe
-`false` default unless a demo build is intentional. Native API/test startup
-leaves static delivery disabled unless explicitly set.
+Compose. Compose and the recruiter-facing Azure/Hugging Face workflows supply
+the intentional public build argument `VITE_DEMO_MODE=true`; other builds retain
+the Dockerfile's safe `false` default. Native API/test startup leaves static
+delivery disabled unless explicitly set.
 
 FastAPI registers only the known SPA locations and `/assets`. It does not use
 a generic catch-all, so `/mcp`, `/v1/*`, `/healthz`, `/readyz`, `/metrics`,

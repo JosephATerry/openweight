@@ -138,7 +138,7 @@ class ServiceInfoResponse(ApiModel):
     service: str
     version: str
     environment: str
-    deployment_profile: Literal["local", "huggingface"]
+    deployment_profile: Literal["local", "huggingface", "azure"]
     backend: str
     model_id: str
     inference_provider: str

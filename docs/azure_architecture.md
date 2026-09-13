@@ -1,630 +1,172 @@
-# Azure deployment reference architecture
+# Azure OpenWeight architecture
 
-## Purpose and status
+## Status and invariant
 
-This document defines the Azure reference architecture for the existing
-containerized FastAPI/LangGraph service. It is an implementation contract for
-the later infrastructure-as-code stage, not evidence of a deployed system.
-No Azure resource, identity, credential, GitHub federation, or deployment is
-created by this design.
+D19D implements this architecture in source only. Provider plugins were
+initialized locally with the Terraform backend disabled for schema validation.
+No Azure authentication, remote-state initialization/access, plan/apply,
+resource creation, secret creation, container upload, model call, or deployment
+occurred.
 
-The application-side PostgreSQL checkpoint, approval-session, transactional
-effect ledger, OIDC/JWT authorization, TLS, and parameterized Azure
-CI-federation foundations described here are implemented. The public GitHub
-repository and Hugging Face deployment are live, but no Azure trust or resource
-has been created. The Azure reference remains at one replica until its real
-database bootstrap and multi-replica behavior are verified.
+The model is not the security boundary. GPT-OSS can propose or explain; backend
+authentication, authorization, typed validation, deterministic policy checks,
+explicit approval, the fixed executor, PostgreSQL constraints, and durable
+audit state remain authoritative.
 
-The design favors a realistic, reproducible portfolio deployment with bounded
-cost and operational complexity. Azure Container Apps is preferred over AKS:
-the application is one HTTP service, has no Kubernetes-specific requirement,
-and benefits from managed ingress, revisions, health probes, and autoscaling.
-
-## Current application constraints
-
-The architecture preserves the application that already exists rather than
-introducing a parallel cloud-specific service:
-
-- `openweight_platform.api` is a thin FastAPI boundary over the existing
-  backend factory, LangGraph orchestration, policy retrieval, PostgreSQL
-  services, approval flow, and controlled executor.
-- The runtime image is CPU-only, runs as UID/GID `10001:10001`, and starts with
-  `python -m openweight_platform.api.run`. It contains no model weights or
-  training environment.
-- Configuration is environment-driven. Backends are lazy and are not loaded at
-  import or process startup.
-- PostgreSQL stores operational data and pgvector policy embeddings. Fictional
-  operations data and policy indexing are explicit setup steps, not API startup
-  side effects.
-- `/healthz` is process liveness. `/readyz` reports sanitized dependency
-  readiness. `/metrics` is hidden from product OpenAPI and can be public for
-  local work, bearer-protected, or disabled for cloud ingress.
-- Logs are structured JSON on stdout. Metrics and OpenTelemetry attributes use
-  bounded, privacy-safe fields; prompts, responses, reasoning, document text,
-  credentials, and database URLs are excluded.
-- Local/test approval state can use `InMemorySaver`; production-capable
-  configuration uses LangGraph `PostgresSaver`, durable row-locked approval
-  sessions, and a transactional execution-effect ledger.
-- The only consequential operation exposed by the service is the fixed,
-  parameterized access-request status transition behind proposal validation,
-  LangGraph interruption, and explicit approval. There is no arbitrary SQL,
-  tool, or write route.
-- Public GitHub Actions tests and builds the application and deploys the
-  recruiter demo to Hugging Face after successful current-main CI. It performs
-  no Azure deployment.
-
-The reference stays at one API replica until live bootstrap/load validation,
-despite the shared durability implementation. An external model endpoint
-remains the practical cloud default. GPT-OSS 20B is the primary/default model;
-Muse Glimmer 30B remains experimental. Neither model belongs in the CPU API
-container.
-
-## Recommended Azure runtime architecture
-
-### Resource inventory
-
-The minimum Azure deployment consists of the following resources in one
-environment-specific resource group:
-
-| Resource | Purpose | Initial posture |
-|---|---|---|
-| Azure Container Registry | Stores versioned API images | Basic tier where adequate; admin user disabled |
-| Container Apps managed environment | Runtime boundary and revision management | One environment per Azure environment |
-| Azure Container App | Runs the FastAPI image | External HTTPS ingress; one active revision; one replica |
-| User-assigned managed identity | Runtime Azure identity | ACR pull and Key Vault secret-read only |
-| Azure Database for PostgreSQL Flexible Server | Operational data, policy vectors, future checkpoints | TLS, private connectivity, backups enabled |
-| Azure Key Vault | Runtime secrets | RBAC authorization; Container App identity reads only required secrets |
-| Log Analytics workspace | Container and platform logs | Bounded retention and ingestion controls |
-| Application Insights | Application traces and request telemetry | OpenTelemetry boundary; sampling enabled |
-| Virtual network and subnets | Private database path | Separate Container Apps infrastructure and PostgreSQL delegated subnets |
-| PostgreSQL private DNS integration | Resolves the private database endpoint | Linked only to the required virtual network |
-
-No Redis, AKS cluster, MLflow server, bundled model server, separate frontend
-service, API Management instance, Front Door profile, or permanent GPU is
-required for the initial reference architecture. The compiled React frontend
-is served by the FastAPI container.
+## Runtime topology
 
 ```mermaid
 flowchart LR
-    user[API client] -->|HTTPS| ingress[Container Apps ingress]
-
-    subgraph azure[Azure environment]
-        ingress --> api[FastAPI Container App\none active revision\none replica]
-        acr[Azure Container Registry] -->|image pull via managed identity| api
-        api -->|secret references via managed identity| kv[Key Vault]
-        api -->|TLS over private network| pg[(PostgreSQL Flexible Server\npgvector)]
-        api -->|structured stdout| logs[Log Analytics]
-        api -->|OpenTelemetry| appi[Application Insights]
-    end
-
-    api -->|configured HTTPS backend| inference[External or separately scaled inference]
+    recruiter[Public recruiter] -->|managed HTTPS| app[Container Apps Consumption\nReact + FastAPI]
+    entra[Entra-authenticated operator] -->|bearer token| app
+    acr[Standard ACR\nimmutable digest] -->|managed identity pull| app
+    app -->|secret refs via managed identity| kv[Key Vault]
+    app -->|TLS on delegated subnet| pg[(PostgreSQL Flexible Server\nB1ms / 32 GiB / pgvector)]
+    app -->|privacy-safe stdout| logs[Bounded Log Analytics]
+    app -->|HF InferenceClient| hf[Hugging Face Inference Providers]
+    hf -->|provider: Groq| model[openai/gpt-oss-20b]
 ```
 
-### Container App
+The one CPU application container serves the compiled frontend and FastAPI.
+GPT-OSS weights never enter Azure. There is no Azure model service, accelerator,
+GPU profile, CUDA image, model-weight disk, AKS, API Management, Front Door,
+Application Gateway, NAT Gateway, Redis, or private endpoint.
 
-Deploy one Container App for the compiled React frontend and FastAPI service.
-A second application service is not justified unless inference or another
-independently scaled concern later requires it. The current one-origin product
-surface keeps `/v1/*`, `/mcp`, health, and frontend routes in the same image.
+The Qwen query encoder remains the existing CPU retrieval component. Its pinned
+public files are preloaded during image construction, and the explicit one-off
+policy indexing job populates PostgreSQL. It is not GPT-OSS generation and is
+never invoked by deployment verification, `/healthz`, or `/readyz`.
 
-The Container App contract is:
+## Public demo versus production identity
 
-- pull an immutable image from ACR, preferably by digest; retain a human-readable
-  Git SHA tag for traceability;
-- run the existing non-root image and entrypoint;
-- set `OPENWEIGHT_API_HOST=0.0.0.0` and an environment-configured target port
-  (initially `8000`);
-- expose HTTPS ingress and redirect or reject plaintext traffic at the managed
-  ingress boundary;
-- map liveness to `/healthz` and readiness to `/readyz`, with conservative
-  initial delays and failure thresholds;
-- use single-revision mode initially so a failed revision does not receive
-  approval traffic and the previous healthy revision remains a rollback target;
-- set CPU, memory, request timeout, and connection limits from Terraform
-  variables, then tune from observed telemetry rather than embedding them in
-  application code;
-- set `min_replicas=1` and `max_replicas=1` until the implemented durable
-  approval/idempotency path is bootstrapped and load-validated in Azure;
-- make the filesystem disposable and store no authoritative application state
-  in the container.
+Container Apps ingress is external, TLS-only, and unrestricted by source CIDR
+when the optional CIDR list is empty. This is deliberate so a recruiter can open
+the managed HTTPS URL. Public users can render all portfolio pages, read the
+fictional access-request records, and ask bounded free-form Policy & Evidence
+questions with grounded citations.
 
-`/healthz` must stay independent of model generation, database writes, and
-telemetry export. `/readyz` may report sanitized database/backend configuration
-state but must not perform a consequential operation.
+Azure still requires complete Entra issuer/audience/JWKS configuration. A
+separate backend switch grants an unauthenticated request only
+`agent.query`. It never grants `actions.propose` or `approvals.resume`.
+Supplying a malformed token fails closed. React's Reader/Approver/Operator
+selector changes interface affordances only; it is not sent as trusted
+authorization state.
 
-### Container Registry and image promotion
+Therefore the public recruiter posture is honest:
 
-ACR is the image system of record. Disable its admin account. The future
-pipeline will build the existing production Dockerfile once, tag it with the
-source commit, push it through a narrowly authorized CI identity, and deploy
-the resulting immutable digest. The Container App runtime identity receives
-`AcrPull`; it does not receive push or registry-administration permissions.
+- anonymous visitors can inspect and query the synthetic portfolio;
+- they can see the governed-action flow and observe an authorization challenge;
+- Entra-assigned operators/approvers can exercise the real proposal, durable
+  checkpoint, human decision, fixed update, and idempotency-ledger path;
+- production deployment would normally disable anonymous reads or place them in
+  a separately governed demo environment.
 
-Promotion must identify the same digest across environments. Rebuilding a
-nominally identical tag for production would weaken provenance and is not the
-recommended flow.
+## Secrets and identities
 
-## CI/CD trust and identity separation
+Terraform creates no secret payload. Operations later create three values in
+Key Vault: the bootstrap database administrator password, the runtime database
+password, and a distinct inference-only HF token. The Azure HF token belongs to
+the same Hugging Face account as the Space credential so routed usage bills to
+that account, while remaining independently revocable.
 
-The canonical public repository is `JosephATerry/openweight`. Its implemented
-Hugging Face deployment uses a separate Trusted Publisher and does not grant
-Azure access. A future Azure deployment must configure its own reviewed branch
-or protected-environment trust against that repository.
+Container Apps references versionless Key Vault URIs. Azure RBAC is scoped to
+individual secret resources:
 
-The Azure deploy job should request `id-token: write` and `contents: read`,
-exchange the GitHub OIDC token for a short-lived Microsoft Entra token, and use
-an environment-scoped federated credential. A long-lived
-`AZURE_CLIENT_SECRET` is not the preferred design.
+| Identity | Allowed | Not allowed |
+|---|---|---|
+| Runtime managed identity | ACR pull; runtime DB password; Azure HF token | DB admin secret, ACR push, deployment |
+| Temporary bootstrap identity | ACR pull; two DB bootstrap secrets | HF token, application deployment |
+| GitHub OIDC CI identity | ACR push; update the one app after it exists | Key Vault data, database data, subscription-wide ownership |
+
+The bootstrap identity and jobs exist only during the Terraform `bootstrap`
+or later `maintenance` stage. Moving to `application` removes that elevated
+path; `maintenance` does not remove the already-running app.
+
+## PostgreSQL bootstrap and readiness
+
+PostgreSQL is private-only behind the existing delegated-subnet/private-DNS
+design, with TLS verification, B1ms, fixed 32 GiB/P4 (auto-grow disabled),
+seven-day backup, no HA, and no geo backup. Terraform allowlists `vector`, but never pretends allowlisting
+creates the extension.
+
+The manually triggered migration job takes an advisory lock and applies additive
+versioned migration 1. It creates `vector`, the operations tables, durable
+approval sessions, execution ledger, LangGraph checkpoint tables, policy vector
+table, runtime login, and narrow grants. Fictional operations seeding is an
+explicit flag on that job. A protected migration ledger records completion.
+
+Policy embeddings are a second manual job so a schema migration never silently
+executes a model. It runs only after migration succeeds. The app is created only
+after both jobs are verified. Ordinary app deploys never run either job.
+
+`/healthz` checks process liveness only. `/readyz` performs bounded,
+read-only checks for configuration, PostgreSQL connectivity, checkpoint and
+approval tables, the vector extension, a nonempty policy index, and presence of
+the HF credential. It does not generate text or embed a query.
+
+## Terraform and first deployment ordering
 
 ```mermaid
 flowchart LR
-    commit[GitHub commit or approved release] --> ci[Existing CI quality and container jobs]
-    ci -->|success only| oidc[GitHub OIDC token]
-    oidc --> entra[Entra federated credential]
-    entra --> deploy[Short-lived CI deployment identity]
-    deploy -->|AcrPush| acr[ACR]
-    deploy -->|deploy immutable digest| app[Container App revision]
-    app -->|AcrPull| runtime[Runtime managed identity]
-    runtime -->|read selected secrets| kv[Key Vault]
-    app --> verify[Post-deploy health verification]
+    state[State bootstrap\nStandard LRS] --> foundation[Terraform foundation]
+    foundation --> image[Azure CD build_only\npush digest]
+    image --> secrets[Operator creates\nKey Vault secrets]
+    secrets --> jobs[Terraform bootstrap\nmanual jobs]
+    jobs --> verify[Run/verify migration\nthen policy index]
+    verify --> application[Terraform application\ndigest-pinned app]
+    application --> steady[CI-gated steady-state CD]
 ```
 
-Identity boundaries:
+The state root is intentionally separate and initially local. It defines a
+Standard LRS StorageV2 account, private container, Entra data-plane RBAC, shared
+keys disabled, TLS, versioning/change feed, soft deletion, and destroy guards.
+The application backend then uses OIDC/Entra authentication and blob locking.
 
-| Identity | Required access | Explicitly not granted |
-|---|---|---|
-| GitHub CI federated identity | `AcrPush` on the target registry; narrowly scoped Container Apps deployment rights on the target environment/app | Subscription Owner, database data access, Key Vault secret-value read, runtime API permissions |
-| Container App user-assigned identity | `AcrPull`; `Key Vault Secrets User` on the application vault; any later service access individually justified | Registry push, deployment rights, broad resource-group Contributor, GitHub access |
-| Migration/indexing identity | Database schema/data privileges required by the one-off operation | Container App deployment or registry administration |
+## CI/CD trust and release
 
-The exact built-in or custom deployment role must be resolved and tested in
-the security implementation stage. It should be scoped to the target resource,
-not granted at subscription scope merely for convenience.
+`.github/workflows/deploy-azure.yml` is independent from Hugging Face CD. Its
+job is safely skipped until the repository-level non-secret variable
+`AZURE_DEPLOY_ENABLED` is exactly `true`. This gate remains absent through the
+D19D merge and is set only after the GitHub Environment, federation, variables,
+and Azure foundation are ready. Once enabled, a successful push-triggered CI
+run for canonical `main` starts the job. The workflow rechecks that the tested
+SHA is still current main before requesting an OIDC token. The federated
+subject is exactly:
 
-## PostgreSQL and pgvector
-
-Use Azure Database for PostgreSQL Flexible Server. The reference architecture
-uses private connectivity from the Container Apps environment, TLS in transit,
-managed backups, and an application role with only the required schema/data
-privileges.
-
-The current application authenticates with a database username and password.
-For the first implementation, store the password in Key Vault and expose it to
-the app through a Container Apps secret reference. Never put it in Terraform
-source, a tfvars file committed to Git, the image, or GitHub workflow YAML.
-Microsoft Entra authentication for PostgreSQL is a desirable later improvement,
-but the application would first need explicit token acquisition/renewal support;
-this design does not claim it already exists.
-
-Terraform configures a TLS-only server, and the application exposes an explicit
-PostgreSQL SSL mode and CA contract. Cloud configuration requires
-`sslmode=verify-full`; that path still must be exercised against the selected
-Azure certificate chain before a production claim is made.
-
-For pgvector, Terraform and the migration process must:
-
-1. select a PostgreSQL version and Azure region that support the `vector`
-   extension;
-2. allowlist `vector` through the server's `azure.extensions` configuration;
-3. execute `CREATE EXTENSION IF NOT EXISTS vector` through the controlled
-   migration path;
-4. verify extension availability before policy indexing.
-
-Schema creation and upgrades should run as an explicit one-off migration job or
-release step using a separate migration credential. The API must not acquire
-schema-owner rights or run migrations at every startup.
-
-`scripts/setup_operations.py` remains an opt-in demo/dev initialization step
-for fictional data. It must never be silently applied to a production database.
-Policy indexing remains a separate, idempotent one-off job because it requires
-an embedding backend; it is not a health probe or API startup action. Database
-backup retention, point-in-time restore settings, maintenance window, and
-optional zone-redundant high availability are environment parameters. The demo
-environment may omit HA for cost; a production reference must revisit it based
-on recovery objectives.
-
-## Durable approval state and idempotency
-
-Local/test mode remains process-local. PostgreSQL mode now combines LangGraph's
-supported saver, a durable approval-session record, row-level resume locking,
-and a transactional execution ledger. The deployment must bootstrap those
-schemas before enabling durable mode and must never silently fall back to
-memory.
-
-```mermaid
-flowchart TB
-    subgraph local[Local and test posture]
-        client1[Client] --> api1[One API replica]
-        api1 --> memory[InMemorySaver and memory session store]
-        memory -. restart loses pending state .-> lost[Approval cannot safely resume]
-        api1 --> db1[(Operational PostgreSQL)]
-    end
-
-    subgraph durable[Durable PostgreSQL posture]
-        client2[Client] --> ingress2[Container Apps ingress]
-        ingress2 --> replicas[Multiple API replicas]
-        replicas --> checkpoints[(PostgreSQL durable checkpointer)]
-        replicas --> ledger[(Approval and execution idempotency ledger)]
-        replicas --> db2[(Operational PostgreSQL)]
-        ledger --> executor[Controlled executor]
-    end
+```text
+repo:JosephATerry/openweight:environment:azure-production
 ```
 
-The application integrates `PostgresSaver` and a separate application-owned
-approval session/ledger schema. Merely provisioning PostgreSQL is still insufficient:
-the migration/bootstrap command must run and the runtime role must hold the
-narrow required grants.
-
-Before `max_replicas` exceeds one, deployment work must verify:
-
-- the durable checkpointer tables and least-privilege role;
-- a durable approval/session record containing stable approval and thread IDs;
-- an execution idempotency key and database uniqueness constraint;
-- a transactional claim/state transition so only one replica can execute an
-  approved effect;
-- resume behavior that recovers the stored terminal result after an interrupted
-  session completion;
-- real Azure connection limits plus concurrency, restart, rollback, and retry
-  behavior under load.
-
-The effect ledger provides exactly-once behavior for the one controlled
-PostgreSQL status effect; it is not a generic distributed transaction or an
-authorization mechanism for other writes.
-
-## Networking and public surface
-
-### Reference/default topology
-
-- Internet clients reach only the Container App HTTPS ingress.
-- The Container Apps managed environment uses a dedicated infrastructure
-  subnet.
-- PostgreSQL Flexible Server uses private network access in a separate delegated
-  subnet and the Azure-required private DNS integration.
-- No database port is published to the Internet.
-- Key Vault and ACR use managed identity and RBAC. Private endpoints for them
-  are a stronger production option, not mandatory for the cost-conscious demo.
-- No host filesystem, local WSL path, Docker socket, model directory, or user
-  home is mounted into the cloud container.
-
-### Minimum portfolio variant
-
-If private PostgreSQL networking is temporarily omitted to reduce deployment
-complexity, the only acceptable demo fallback is TLS plus narrowly scoped
-firewall access. It must not use an open `0.0.0.0/0` rule or be described as the
-production reference. The Terraform default remains the private-database
-topology.
-
-### Endpoint exposure
-
-| Endpoint class | Cloud treatment |
-|---|---|
-| Product routes under `/v1` | Require validated OIDC/JWT identity and bounded application permission when cloud auth is enabled |
-| `/healthz` | Available to platform liveness probes; minimal response |
-| `/readyz` | Available to platform readiness probes; sanitized dependency state only |
-| `/metrics` | Do not expose publicly; disable externally or protect behind an internal monitoring path in later work |
-| `/docs` and `/openapi.json` | Useful for demo/development; disable or protect for a production environment if the public API contract does not require them |
-
-The API now has a configurable standards-based RS256 OIDC/JWT boundary, but no
-live Entra tenant/application registration exists. It therefore is still not a
-deployed production-public consequential API. Ingress restrictions and
-fictional data are not substitutes for enabling and operating authentication.
-
-## Request and security flow
-
-The LLM is not the security boundary. Azure hosting must preserve the existing
-deterministic control plane and must not add an arbitrary SQL, arbitrary tool,
-or generic write endpoint.
-
-```mermaid
-flowchart LR
-    caller[Authenticated caller] --> api[JWT, permission, and FastAPI validation]
-    api --> agent[Agent and configured inference backend]
-    agent --> proposal[Structured proposal]
-    proposal --> guard[Deterministic policy and evidence validation]
-    guard --> approval[Explicit approval when required]
-    approval --> checkpoint[Stable approval checkpoint]
-    checkpoint --> executor[Fixed parameterized executor]
-    executor --> database[(PostgreSQL)]
-    api --> audit[Privacy-safe logs, metrics, and traces]
-    guard --> audit
-    approval --> audit
-    executor --> audit
-```
-
-Entra ID registration belongs at the ingress/API boundary; application code
-already validates issuer, audience, signature, time claims, and bounded
-roles/scopes. Managed
-identity authenticates the workload to Azure services; it does not authenticate
-the product user and must not be confused with product authorization.
-
-## Secrets and configuration
-
-Key Vault holds runtime secret values such as:
-
-- the current PostgreSQL application password;
-- external model/backend credentials;
-- an optional Tavily key;
-- future third-party integration credentials;
-- an Application Insights connection string if the selected integration needs
-  one and managed identity is not supported for that path.
-
-Non-secret configuration remains ordinary Container App environment variables:
-backend alias/endpoint, database host/port/name/user, logging level,
-environment, service name, observability switches, and port. Secret-backed
-variables use Container Apps Key Vault references authorized by the runtime
-managed identity. Secret rotation and revision/restart behavior must be tested
-before production use.
-
-Key Vault unavailability should prevent a new revision that lacks required
-secrets from becoming ready. It should not cause the previous healthy revision
-to be discarded automatically. Secrets are never echoed by readiness, logs,
-Terraform outputs, or deployment diagnostics.
-
-## Observability integration
-
-The application observability layer provides:
-
-- structured JSON stdout logs flow to Container Apps/Log Analytics;
-- OpenTelemetry spans cross HTTP, agent, backend, retrieval, fixed tool,
-  approval, executor, and readiness boundaries;
-- `request_id` remains application correlation, while trace and span IDs remain
-  distributed-tracing identifiers;
-- the safe attribute allowlist continues to exclude prompts, responses,
-  reasoning, document/policy content, SQL, credentials, person data, and raw
-  exception messages.
-
-The cloud exporter belongs at the observability boundary. Configure the Azure
-Monitor/Application Insights OpenTelemetry integration or a supported OTLP path
-without adding Azure calls throughout business logic. Export is disabled/no-op
-when not configured locally. Exporter failure should be buffered/retried within
-bounded limits and must not normally make liveness fail.
-
-The local `/metrics` endpoint is not a public cloud monitoring API. For the
-initial deployment, either disable it on external ingress or add an internal
-scrape/access-control seam before enabling Azure Managed Prometheus. Application
-Insights and Log Analytics cover the immediate portfolio requirement without a
-public metrics endpoint. Use sampling, retention, daily caps/alerts, and bounded
-labels to control cost and privacy.
-
-## Model inference boundary
-
-The API image and Container App host neither the primary/default GPT-OSS 20B
-model nor the experimental Muse Glimmer 30B backend. Supported Azure design
-options are:
-
-| Option | Use | Trade-off |
-|---|---|---|
-| External hosted inference endpoint | Recommended cost-conscious Azure demo | Pay-per-use and independent scaling; provider privacy, availability, and adapter support must be evaluated |
-| Separate GPU inference service | High-control future deployment | Independent lifecycle but meaningful recurring GPU and operations cost |
-| Another configured provider/backend | Portable integration | Requires a tested backend adapter and contract-compatible structured output |
-| Local llama.cpp/model service | Development only | Useful locally; not an Azure production dependency |
-
-The recommended Azure demo posture is an external, separately configured
-inference endpoint with credentials in Key Vault, provided it can serve the
-primary GPT-OSS 20B backend and meet data-handling requirements. If it cannot,
-retain the backend abstraction and deploy inference separately; do not force
-GPT-OSS or the experimental Muse Glimmer backend into the CPU API container.
-No permanent Azure GPU is justified by this reference architecture.
-
-## Scaling and resiliency
-
-### Current safe posture
-
-- `min_replicas=1`, `max_replicas=1`.
-- Do not scale to zero for approval-sensitive workflows until cold-start,
-  connection, and approval-latency behavior is accepted.
-- Use database connection pooling sized below Flexible Server connection limits.
-- Roll out one healthy revision at a time and keep a prior digest available for
-  rollback.
-
-For a read-only demo configuration where approval/write routes are disabled,
-scale-to-zero could be evaluated separately. It is not the default architecture
-while those routes are enabled.
-
-### Future scalable posture
-
-The durable checkpointer and execution ledger requirements are implemented in
-application code. Multiple replicas may serve the same ingress only after the
-actual Azure migration, runtime grants, connection capacity, and concurrency
-behavior are verified. Set scaling rules from measured HTTP latency and retain
-readiness gates. Scale-to-zero is a separate latency/cold-start trade-off.
-
-### Failure behavior
-
-| Failure | Expected behavior |
-|---|---|
-| API restart | Current pending approvals are lost and must not be guessed or replayed; future durable state permits safe resume |
-| PostgreSQL unavailable | Liveness remains simple; readiness and dependent operations return sanitized unavailable behavior, normally 503 |
-| Model backend unavailable | Non-model liveness remains available; agent requests fail with the existing sanitized backend-unavailable response |
-| Key Vault unavailable | A revision missing required secrets must not become ready; do not expose secret-resolution details |
-| Telemetry exporter unavailable | Product requests continue where safe; bounded retries/drops are observable without payload logging |
-
-This portfolio design does not add multi-region disaster recovery. Backup
-restore testing, recovery objectives, zone redundancy, and regional failover
-are future production decisions.
-
-## Environments, naming, region, and tags
-
-Use three clear configuration contexts without multiplying deployments:
-
-1. `local`: Docker Compose and fake/external backends;
-2. `demo`: one cost-controlled Azure environment using fictional data;
-3. `prod` reference: a future isolated environment with stronger auth,
-   durability, HA, retention, and access controls.
-
-Azure environments must not share databases, Key Vault secrets, identities, or
-Terraform state. Separate subscriptions are preferred for a real production
-boundary; separate resource groups/state are the minimum portfolio boundary.
-
-Suggested deterministic names use variables rather than assumed reservations:
-
-| Resource | Pattern |
-|---|---|
-| Resource group | `rg-owp-{environment}-{region_code}` |
-| Container Apps environment | `cae-owp-{environment}-{region_code}` |
-| API Container App | `ca-owp-api-{environment}-{region_code}` |
-| ACR | `acrowp{environment}{unique_suffix}` |
-| PostgreSQL server | `psql-owp-{environment}-{unique_suffix}` |
-| Key Vault | `kv-owp-{environment}-{unique_suffix}` |
-| Log Analytics | `log-owp-{environment}-{region_code}` |
-| Application Insights | `appi-owp-{environment}-{region_code}` |
-| Runtime identity | `id-owp-api-{environment}-{region_code}` |
-| CI deployment identity | `id-owp-gh-{environment}-{region_code}` |
-
-Apply at least `project=openweight-platform`, `environment`,
-`managed-by=terraform`, `component`, and `purpose=portfolio-reference`. Avoid
-personal or sensitive identifiers.
-
-Terraform accepts `var.location` and does not silently choose a region.
-Selection criteria are user proximity, Container Apps/PostgreSQL/pgvector
-availability, cost, quota, compliance/data residency, and latency to the chosen
-inference endpoint. Co-locate API, database, registry, Key Vault, and telemetry
-where practical. Derive `region_code` explicitly rather than parsing an Azure
-display name.
-
-## Cost posture
-
-Likely recurring cost drivers are PostgreSQL Flexible Server, external
-inference, Container Apps compute while the required replica is warm, Log
-Analytics/Application Insights ingestion, private networking options, ACR, and
-Key Vault operations. A permanent GPU, high-availability database, excessive
-telemetry, and overbuilt private endpoints would materially increase cost.
-
-Controls for the demo environment:
-
-- one small, measured API replica; do not claim scale-to-zero until cold-start,
-  database-connection, and approval-latency behavior is deployment-validated;
-- the smallest database SKU/storage suitable for deterministic demo data, with
-  HA disabled only for the explicitly non-production demo;
-- Basic ACR where its capabilities suffice;
-- no AKS, API Management, Front Door, Redis, or permanent GPU by default;
-- OpenTelemetry sampling, short justified log retention, ingestion alerts/caps,
-  and no sensitive/high-cardinality telemetry;
-- pay-per-use external inference where it meets privacy and adapter needs;
-- Azure budgets and cost alerts before deployment;
-- intentional Terraform teardown of disposable demo resources only under a
-  documented data-retention policy.
-
-Exact prices are intentionally not asserted: service prices, regions, quotas,
-and free grants change. Terraform exposes sizing variables; deployment review
-must use the current Azure pricing calculator and subscription limits.
-
-## Architecture decisions
-
-| Decision | Chosen approach | Alternatives considered | Reason | Revisit when |
-|---|---|---|---|---|
-| Compute | One Azure Container App | AKS, App Service, multiple apps | Managed container revisions/ingress/scaling without Kubernetes operations | Workloads require Kubernetes primitives or separate services |
-| Registry | ACR with immutable digest deployment | Docker Hub, admin credentials | Azure RBAC/managed-identity integration and image provenance | Multi-cloud registry policy changes |
-| Database | PostgreSQL Flexible Server with pgvector | Containerized PostgreSQL, separate vector DB | Matches current SQL/vector architecture and provides managed persistence/backups | Scale, recovery, or vector workload exceeds the service design |
-| Database network | Private VNet connectivity by default | Public endpoint with scoped firewall | Keeps the data plane off the public Internet | A constrained demo documents and accepts the fallback |
-| Secrets | Key Vault references through runtime managed identity | Plain env/tfvars, GitHub secrets for runtime | Central rotation and least-privilege retrieval without image/repo secrets | Workload identity support or secret categories change |
-| CI authentication | GitHub OIDC federation | Long-lived client secret | Short-lived credentials and environment/repository trust conditions | CI platform changes |
-| Runtime identity | Separate user-assigned managed identity | CI identity reuse, registry admin auth | Stable lifecycle and least-privilege ACR/Key Vault grants | Per-revision identity becomes necessary |
-| Observability | Existing OTel/logging boundary to Azure Monitor, Application Insights, and Log Analytics | Azure calls in business code, public `/metrics` | Portability, privacy allowlist, and local no-op operation | Managed Prometheus/private scrape is required |
-| Model inference | External or separately scaled backend | Bundle GPT-OSS 20B or experimental Muse Glimmer 30B in API; permanent GPU | Keeps API image CPU-portable and avoids fixed GPU cost | Requirements justify dedicated inference infrastructure |
-| Current scaling | One always-on replica | Multiple replicas, scale-to-zero | Conservative until the durable path is bootstrapped and load-tested in Azure | Migration and multi-replica evidence supports expansion |
-| Checkpoints | PostgreSQL-backed LangGraph checkpointer plus idempotency ledger | Redis/new state service, InMemorySaver | Reuses managed PostgreSQL while separating checkpoint and effect guarantees | Load or availability objectives justify another store |
-| Product authentication | Configurable Entra-compatible OIDC/JWT validation at API boundary | No auth, custom tokens | Standard identity and bounded authorization seam | Product audience or hosting platform requires another provider |
-
-## Terraform implementation contract
-
-The checked-in Terraform implements the agreed architecture without changing
-application semantics. Its resources are grouped into `network`, `identity`,
-`registry`, `data`, `observability`, and `application` concerns.
-
-Required input contract:
-
-- `project`, `environment`, `location`, `region_code`, `unique_suffix`, and
-  common tags;
-- VNet and separate Container Apps/PostgreSQL subnet CIDRs;
-- API image repository plus immutable tag/digest;
-- API CPU/memory/port and replica bounds, defaulting to one/one;
-- PostgreSQL version, SKU, storage, backup retention, HA flag, database/user
-  names, and pgvector enablement;
-- Log Analytics retention and telemetry sampling/cost controls;
-- ingress mode and allowed origins/access restrictions;
-- names/IDs for Azure GitHub OIDC subjects supplied explicitly; the optional
-  Azure federation remains disabled until its complete trust contract is
-  reviewed.
-
-Sensitive values must come from a secure bootstrap path and be marked
-Terraform-sensitive; they must not be committed or emitted as ordinary outputs.
-Useful non-secret outputs include the Container App FQDN, registry login server,
-managed identity IDs, Key Vault name, private PostgreSQL hostname, and
-observability resource names.
-
-Any Azure deployment acceptance must include plan/static validation and
-cost/security review; resource creation remains a separately authorized action.
-Terraform state must use a secured remote backend with locking and restricted
-access before team use. Local state, plans, and provider credentials must be
-ignored by Git.
-
-## Implemented application layers
-
-| Layer | Current status |
-|---|---|
-| Infrastructure as code | Terraform defines the Azure resources and validated configuration boundaries; it has not been applied. |
-| Security and durability | OIDC/JWT validation, database TLS settings, PostgreSQL approval sessions/checkpoints, and the transactional effect ledger are implemented. |
-| Interoperability | MCP 2026-07-28 reuses the same authorization, observability, approval, and controlled-executor boundaries. |
-| Product interface | The React frontend is compiled into and served by the FastAPI container. |
-| Recruiter deployment | The public Hugging Face Docker Space is live with synthetic evidence and ephemeral process-local action state. |
-
-These implemented layers do not infer permission to provision Azure resources,
-create Azure credentials, or represent the public demo as production.
-
-## Azure and Hugging Face roles
-
-Azure represents the production-style reference: managed database, private data
-network, managed identities, Key Vault, controlled revisions, and cloud
-observability. The deployed Hugging Face Docker Space is a recruiter-friendly
-public demo with different persistence, authentication, resource, and inference
-constraints. It uses the same product container boundary where practical, but
-the Space is not equivalent to the Azure security architecture.
-
-## MCP boundary
-
-MCP 2026-07-28 is implemented as a bounded surface in the existing FastAPI
-process. When authentication is enabled it authorizes callers through the same
-application policy, emits the same privacy-safe observability, and routes
-sensitive actions through deterministic validation, explicit approval, durable
-idempotency, and the controlled executor. It is not a shortcut around the
-FastAPI security boundary.
-
-## Limitations and prerequisites before a production claim
-
-- No live tenant/application registration exists even though the API auth
-  boundary is implemented.
-- PostgreSQL durability is implemented but not yet bootstrapped or load-tested
-  in Azure; local memory mode remains intentionally non-durable.
-- Certificate-verifying database TLS is configured for cloud use but not yet
-  exercised against an Azure server.
-- No Azure resources, OIDC trust, Key Vault wiring, private network, or remote
-  Terraform state exists yet.
-- The public demo uses GPT-OSS 20B through Hugging Face Inference Providers and
-  Groq; a provider and privacy contract for an Azure production deployment is
-  not selected.
-- `/metrics` is disabled in the Terraform cloud contract; a future internal
-  scrape path remains optional.
-- Restore drills, capacity tests, threat modeling, alert tuning, and production
-  runbooks have not occurred.
-- GPT-OSS 20B remains the primary/default/reference backend. Muse Glimmer 30B
-  remains experimental and is not promoted by the Azure reference.
-
-## Authoritative implementation references
-
-Future implementation should recheck current Azure documentation at execution
-time. Design anchors used for this reference include:
-
-- [Azure Container Apps overview](https://learn.microsoft.com/azure/container-apps/overview)
-- [Container Apps revisions](https://learn.microsoft.com/azure/container-apps/revisions)
-- [Container Apps health probes](https://learn.microsoft.com/azure/container-apps/health-probes)
-- [Container Apps scaling](https://learn.microsoft.com/azure/container-apps/scale-app)
-- [Container Apps managed identities](https://learn.microsoft.com/azure/container-apps/managed-identity)
-- [Container Apps Key Vault secret references](https://learn.microsoft.com/azure/container-apps/manage-secrets)
-- [GitHub Actions authentication to Azure with OIDC](https://learn.microsoft.com/azure/developer/github/connect-from-azure-openid-connect)
-- [PostgreSQL Flexible Server extensions](https://learn.microsoft.com/azure/postgresql/flexible-server/concepts-extensions)
-- [PostgreSQL Flexible Server private networking](https://learn.microsoft.com/azure/postgresql/flexible-server/concepts-networking-private)
-- [PostgreSQL Flexible Server TLS](https://learn.microsoft.com/azure/postgresql/flexible-server/security-connect-tls)
-- [PostgreSQL Flexible Server backup and restore](https://learn.microsoft.com/azure/postgresql/flexible-server/concepts-backup-restore)
-- [Azure Monitor OpenTelemetry for Python](https://learn.microsoft.com/azure/azure-monitor/app/opentelemetry-enable?tabs=python)
-- [LangGraph PostgreSQL checkpointer guidance](https://docs.langchain.com/oss/python/langgraph/add-memory)
+The protected GitHub Environment supplies non-secret tenant, subscription,
+client, resource-group, registry, and app identifiers. No client secret exists.
+PR code cannot satisfy the workflow-run conditions or environment subject.
+Deployments are serialized without cancellation.
+
+The job builds one production image with the recruiter UI and pinned CPU query
+encoder, pushes a commit tag, resolves the ACR manifest digest, and updates the
+app with `repository@sha256:...`. It waits for a healthy revision, verifies
+that exact deployed image, then calls only `/healthz` and `/readyz`.
+Revision names, the previous ready revision, and reviewed rollback guidance are
+written to the job summary. It never automatically calls HF/Groq or rolls back.
+
+The manual `build_only` dispatch exists solely to break the first-deploy
+ordering; it cannot deploy the app. Normal deployments require successful CI.
+The Hugging Face Space workflow, Trusted Publisher, runtime secret, profile,
+portable state, and public URL remain separate and unchanged.
+
+## Cost controls
+
+The design keeps spending protection intact and does not require Pay-As-You-Go:
+
+- Standard ACR matches the new-customer one-registry/100-GiB allowance;
+- PostgreSQL B1ms plus 32-GiB data and backup matches the initial allowance;
+- Container Apps Consumption scales the app to zero and caps it at one replica;
+- 1 vCPU/2 GiB is reserved only while a request is active;
+- Log Analytics is capped at 1 GiB/day with 30-day retention;
+- unused Application Insights is omitted;
+- no fixed-cost edge, egress, cluster, accelerator, or premium networking layer
+  is present.
+
+Allowances are time-, offer-, region-, and subscription-dependent. D19E must
+confirm them in the portal, review the cost estimate, and retain the existing
+$70 subscription budget alerts before any apply.

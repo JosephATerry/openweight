@@ -56,12 +56,25 @@ variable "additional_tags" {
   default     = {}
 }
 
-variable "container_image" {
-  description = "Immutable API image reference in repository@sha256:digest form."
+variable "deployment_stage" {
+  description = "Explicit lifecycle stage: foundation, first bootstrap, application, or later maintenance with app plus manual jobs."
   type        = string
+  default     = "foundation"
 
   validation {
-    condition     = can(regex("@sha256:[0-9a-fA-F]{64}$", var.container_image))
+    condition     = contains(["foundation", "bootstrap", "application", "maintenance"], var.deployment_stage)
+    error_message = "deployment_stage must be foundation, bootstrap, application, or maintenance."
+  }
+}
+
+variable "container_image" {
+  description = "Immutable application image reference. Required only for bootstrap and application stages."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.container_image == null || can(regex("@sha256:[0-9a-fA-F]{64}$", var.container_image))
     error_message = "container_image must be pinned by a 64-character sha256 digest."
   }
 }
@@ -84,24 +97,24 @@ variable "container_app_external_ingress_enabled" {
 }
 
 variable "container_app_allowed_ingress_cidrs" {
-  description = "Explicit source CIDRs allowed at external ingress. Replace the example range before deployment."
+  description = "Optional source restrictions. Leave empty for the recruiter-facing public HTTPS demo."
   type        = list(string)
+  default     = []
 
   validation {
     condition = (
-      length(var.container_app_allowed_ingress_cidrs) > 0 &&
       alltrue([for cidr in var.container_app_allowed_ingress_cidrs : can(cidrhost(cidr, 0))]) &&
       !contains(var.container_app_allowed_ingress_cidrs, "0.0.0.0/0") &&
       !contains(var.container_app_allowed_ingress_cidrs, "::/0")
     )
-    error_message = "Provide at least one valid, restricted ingress CIDR; unrestricted IPv4/IPv6 ranges are forbidden."
+    error_message = "Ingress entries must be valid restricted CIDRs; use an empty list for public access."
   }
 }
 
 variable "container_cpu" {
   description = "Consumption-profile vCPU allocation. Keep paired with a supported memory value."
   type        = number
-  default     = 0.5
+  default     = 1.0
 
   validation {
     condition     = contains([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0], var.container_cpu)
@@ -112,7 +125,7 @@ variable "container_cpu" {
 variable "container_memory" {
   description = "Consumption-profile memory allocation paired with container_cpu."
   type        = string
-  default     = "1Gi"
+  default     = "2Gi"
 
   validation {
     condition     = contains(["0.5Gi", "1Gi", "1.5Gi", "2Gi", "2.5Gi", "3Gi", "3.5Gi", "4Gi"], var.container_memory)
@@ -121,13 +134,13 @@ variable "container_memory" {
 }
 
 variable "container_app_min_replicas" {
-  description = "Conservative warm-replica minimum pending production bootstrap and load validation of durable approval state."
+  description = "Minimum HTTP replicas. Zero enables the cost-conscious portfolio app to scale down while durable state remains in PostgreSQL."
   type        = number
-  default     = 1
+  default     = 0
 
   validation {
-    condition     = var.container_app_min_replicas == 1
-    error_message = "The reference deployment keeps one warm replica pending production durability and cold-start validation."
+    condition     = contains([0, 1], var.container_app_min_replicas)
+    error_message = "container_app_min_replicas must be zero or one."
   }
 }
 
@@ -144,6 +157,12 @@ variable "container_app_max_replicas" {
 
 variable "product_auth_enabled" {
   description = "Require validated OIDC bearer tokens for product routes. Cloud deployments keep this enabled."
+  type        = bool
+  default     = true
+}
+
+variable "public_read_enabled" {
+  description = "Permit anonymous read/query routes while governed write routes continue to require Entra authorization."
   type        = bool
   default     = true
 }
@@ -179,21 +198,21 @@ variable "auth_jwks_url" {
 }
 
 variable "github_federation_enabled" {
-  description = "Create a GitHub OIDC federated credential only after real repository trust values are supplied."
+  description = "Create the GitHub Environment-bound OIDC federated credential."
   type        = bool
   default     = false
 }
 
 variable "github_repository_owner" {
-  description = "Future GitHub organization or owner. Leave as a placeholder until a remote exists."
+  description = "Canonical GitHub repository owner trusted by federation."
   type        = string
-  default     = "placeholder-owner"
+  default     = "JosephATerry"
 }
 
 variable "github_repository" {
-  description = "Future GitHub repository name. Leave as a placeholder until a remote exists."
+  description = "Canonical GitHub repository trusted by federation."
   type        = string
-  default     = "placeholder-repository"
+  default     = "openweight"
 }
 
 variable "github_branch" {
@@ -203,21 +222,15 @@ variable "github_branch" {
 }
 
 variable "github_environment" {
-  description = "Optional protected GitHub environment used in the OIDC subject."
+  description = "Protected GitHub environment used in the OIDC subject."
   type        = string
-  default     = null
+  default     = "azure-production"
 }
 
 variable "application_version" {
   description = "Safe application version metadata exposed by the service."
   type        = string
   default     = "0.1.0"
-}
-
-variable "build_sha" {
-  description = "Externally supplied build identifier; does not require Git in the runtime image."
-  type        = string
-  default     = "unreleased"
 }
 
 variable "log_level" {
@@ -232,30 +245,36 @@ variable "log_level" {
 }
 
 variable "backend_alias" {
-  description = "Existing application backend alias. The cloud default keeps inference outside the API container."
+  description = "Existing GPT-OSS backend alias used with Hugging Face routed inference."
   type        = string
-  default     = "muse-glimmer"
+  default     = "gpt-oss"
 
   validation {
-    condition     = var.backend_alias == "muse-glimmer"
-    error_message = "The cloud reference requires the existing HTTP muse-glimmer alias so the CPU API container cannot load a local model."
+    condition     = var.backend_alias == "gpt-oss"
+    error_message = "Azure routed inference requires the existing gpt-oss backend."
   }
 }
 
-variable "external_inference_base_url" {
-  description = "HTTPS endpoint for separately hosted inference; no model is provisioned by this stack."
+variable "huggingface_provider" {
+  description = "Explicit Hugging Face routed inference provider."
   type        = string
+  default     = "groq"
 
   validation {
-    condition     = can(regex("^https://", var.external_inference_base_url))
-    error_message = "external_inference_base_url must use HTTPS."
+    condition     = var.huggingface_provider == "groq"
+    error_message = "The approved Azure provider is groq."
   }
 }
 
-variable "model_alias" {
-  description = "Non-secret model alias sent to the external backend."
+variable "gpt_oss_model_id" {
+  description = "Exact model routed through Hugging Face Inference Providers."
   type        = string
-  default     = "meta-models/Muse-Glimmer-30B"
+  default     = "openai/gpt-oss-20b"
+
+  validation {
+    condition     = var.gpt_oss_model_id == "openai/gpt-oss-20b"
+    error_message = "The approved Azure model is openai/gpt-oss-20b."
+  }
 }
 
 variable "vnet_address_space" {
@@ -427,10 +446,36 @@ variable "postgresql_application_login" {
 variable "postgresql_application_password_secret_id" {
   description = "Versionless Key Vault secret URI created out of band in D14; this is a reference, not a secret value."
   type        = string
+  default     = null
+  nullable    = true
 
   validation {
-    condition     = can(regex("^https://[a-z0-9-]+\\.vault\\.azure\\.net/secrets/[A-Za-z0-9-]+$", var.postgresql_application_password_secret_id))
+    condition     = var.postgresql_application_password_secret_id == null || can(regex("^https://[a-z0-9-]+\\.vault\\.azure\\.net/secrets/[A-Za-z0-9-]+$", var.postgresql_application_password_secret_id))
     error_message = "postgresql_application_password_secret_id must be a versionless Azure Key Vault secret URI."
+  }
+}
+
+variable "postgresql_administrator_password_secret_id" {
+  description = "Versionless Key Vault URI used only by the temporary bootstrap jobs."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.postgresql_administrator_password_secret_id == null || can(regex("^https://[a-z0-9-]+\\.vault\\.azure\\.net/secrets/[A-Za-z0-9-]+$", var.postgresql_administrator_password_secret_id))
+    error_message = "postgresql_administrator_password_secret_id must be a versionless Azure Key Vault secret URI."
+  }
+}
+
+variable "huggingface_token_secret_id" {
+  description = "Versionless URI for the separately revocable Azure inference-only HF token; Terraform never creates its value."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.huggingface_token_secret_id == null || can(regex("^https://[a-z0-9-]+\\.vault\\.azure\\.net/secrets/[A-Za-z0-9-]+$", var.huggingface_token_secret_id))
+    error_message = "huggingface_token_secret_id must be a versionless Azure Key Vault secret URI."
   }
 }
 
@@ -453,16 +498,5 @@ variable "log_analytics_daily_quota_gb" {
   validation {
     condition     = var.log_analytics_daily_quota_gb > 0
     error_message = "log_analytics_daily_quota_gb must be positive."
-  }
-}
-
-variable "application_insights_sampling_percentage" {
-  description = "Application Insights sampling percentage."
-  type        = number
-  default     = 25
-
-  validation {
-    condition     = var.application_insights_sampling_percentage > 0 && var.application_insights_sampling_percentage <= 100
-    error_message = "application_insights_sampling_percentage must be greater than 0 and at most 100."
   }
 }

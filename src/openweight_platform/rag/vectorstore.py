@@ -41,9 +41,26 @@ def create_policy_vector_store(
 ) -> tuple[PGEngine, PGVectorStore]:
     """Create a PGEngine and policy PGVectorStore, optionally creating its table."""
 
-    engine = PGEngine.from_connection_string(url=config.sqlalchemy_url)
+    engine = (
+        initialize_policy_vector_table(config)
+        if initialize
+        else PGEngine.from_connection_string(url=config.sqlalchemy_url)
+    )
 
-    if initialize and not policy_chunks_table_exists(config):
+    store = PGVectorStore.create_sync(
+        engine=engine,
+        table_name=POLICY_CHUNKS_TABLE,
+        embedding_service=embeddings,
+        metadata_columns=list(POLICY_METADATA_COLUMNS),
+    )
+    return engine, store
+
+
+def initialize_policy_vector_table(config: PostgresConfig) -> PGEngine:
+    """Create the pgvector retrieval table without loading an embedding model."""
+
+    engine = PGEngine.from_connection_string(url=config.sqlalchemy_url)
+    if not policy_chunks_table_exists(config):
         engine.init_vectorstore_table(
             table_name=POLICY_CHUNKS_TABLE,
             vector_size=EMBEDDING_DIMENSION,
@@ -56,14 +73,7 @@ def create_policy_vector_store(
             ],
             store_metadata=False,
         )
-
-    store = PGVectorStore.create_sync(
-        engine=engine,
-        table_name=POLICY_CHUNKS_TABLE,
-        embedding_service=embeddings,
-        metadata_columns=list(POLICY_METADATA_COLUMNS),
-    )
-    return engine, store
+    return engine
 
 
 def count_policy_chunks(config: PostgresConfig) -> int:

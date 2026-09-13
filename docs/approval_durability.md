@@ -78,8 +78,8 @@ fictional seed data and never invokes a model or policy index.
 ## Scaling posture
 
 The implementation removes the prior process-local checkpoint and duplicate
-effect dependency in PostgreSQL mode. Terraform nevertheless keeps
-`min_replicas=1` and `max_replicas=1` as a conservative reference default until
-the actual Azure database bootstrap, connection capacity, migration rollout,
-failure injection, and multi-replica load behavior are verified. Scale-to-zero
-also remains disabled to avoid approval latency and cold-start surprises.
+effect dependency in PostgreSQL mode. The cost-conscious Azure portfolio sets
+`min_replicas=0` and `max_replicas=1`: authoritative state survives scale-to-zero
+in PostgreSQL, while cold-start latency is an accepted demo tradeoff. The cap
+stays at one until actual Azure connection capacity, failure injection, and
+multi-replica load behavior are verified.

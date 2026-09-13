@@ -19,15 +19,31 @@ check "container_consumption_allocation" {
 
 check "image_comes_from_stack_registry" {
   assert {
-    condition     = startswith(lower(var.container_image), "${local.container_registry_name}.azurecr.io/")
-    error_message = "container_image must use the ACR created by this stack and remain digest-pinned."
+    condition = !local.image_consumers_enabled || try(
+      startswith(lower(var.container_image), "${local.container_registry_name}.azurecr.io/"),
+      false,
+    )
+    error_message = "Bootstrap/application stages require an ACR image pinned by digest."
   }
 }
 
 check "runtime_secret_comes_from_stack_vault" {
   assert {
-    condition     = startswith(lower(var.postgresql_application_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/")
-    error_message = "The PostgreSQL runtime secret reference must belong to this stack's Key Vault."
+    condition = !local.application_enabled || (
+      try(startswith(lower(var.postgresql_application_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false) &&
+      try(startswith(lower(var.huggingface_token_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false)
+    )
+    error_message = "The application stage requires PostgreSQL and HF secret references from this stack's Key Vault."
+  }
+}
+
+check "bootstrap_secrets_come_from_stack_vault" {
+  assert {
+    condition = !local.bootstrap_enabled || (
+      try(startswith(lower(var.postgresql_administrator_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false) &&
+      try(startswith(lower(var.postgresql_application_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false)
+    )
+    error_message = "The bootstrap stage requires both database secret references from this stack's Key Vault."
   }
 }
 
@@ -44,7 +60,9 @@ check "github_federation_uses_real_trust_values" {
       var.github_repository_owner != "placeholder-owner" &&
       var.github_repository != "placeholder-repository" &&
       length(trimspace(var.github_repository_owner)) > 0 &&
-      length(trimspace(var.github_repository)) > 0
+      length(trimspace(var.github_repository)) > 0 &&
+      var.github_environment != null &&
+      length(trimspace(var.github_environment)) > 0
     )
     error_message = "Enable GitHub federation only after supplying the real repository owner and name."
   }

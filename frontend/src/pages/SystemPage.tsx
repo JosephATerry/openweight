@@ -64,7 +64,7 @@ function inferenceStateLabel(state: ServiceInfoResponse["inference_state"]): str
 }
 
 function inferenceStateDetail(service: ServiceInfoResponse): string {
-  if (service.deployment_profile === "huggingface") {
+  if (service.inference_provider.startsWith("huggingface:")) {
     if (!service.inference_configured) return "HF_TOKEN is not configured";
     if (service.inference_state === "not_used") return "No provider request has been made";
     if (service.inference_state === "requesting") return "A bounded provider request is active";

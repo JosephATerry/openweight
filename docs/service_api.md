@@ -152,7 +152,7 @@ and approval-gated writes use it. It can be marked optional for a constrained
 mode with `OPENWEIGHT_DATABASE_REQUIRED=false`; database-backed requests still
 fail safely with 503. Tavily and runtime MLflow configuration are optional.
 
-`OPENWEIGHT_BUILD_SHA` is injected by a future build pipeline. The service
+`OPENWEIGHT_BUILD_SHA` is injected into immutable release images by CI/CD. The service
 does not require a Git checkout or expose repository paths/history at runtime.
 
 ## Approval and write safety

@@ -1,0 +1,170 @@
+name: Deploy Azure Container App
+
+"on":
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      build_only:
+        description: Build and push the bootstrap image without updating the app
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publish immutable image and deploy current main
+    if: >-
+      vars.AZURE_DEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.build_only) ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: azure-production
+      url: ${{ steps.release.outputs.application_url }}
+    env:
+      AZURE_CORE_OUTPUT: none
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_CONTAINER_APP: ${{ vars.AZURE_CONTAINER_APP }}
+      IMAGE_REPOSITORY: openweight-platform-api
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Check out the CI-validated revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Confirm revision is still current main
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          remote_sha="$(git ls-remote "https://github.com/${REPOSITORY}.git" refs/heads/main | cut -f1)"
+          test "$SOURCE_SHA" = "$remote_sha"
+
+      - name: Authenticate to Azure with GitHub OIDC
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify the narrowly configured Azure targets
+        run: |
+          test -n "$AZURE_RESOURCE_GROUP"
+          test -n "$AZURE_CONTAINER_REGISTRY"
+          test -n "$AZURE_CONTAINER_APP"
+          az acr show --name "$AZURE_CONTAINER_REGISTRY" --resource-group "$AZURE_RESOURCE_GROUP" --only-show-errors --output none
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ inputs.build_only }}" != "true" ]]; then
+            az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --only-show-errors --output none
+          fi
+
+      - name: Build and push the production image
+        id: image
+        run: |
+          login_server="$(az acr show --name "$AZURE_CONTAINER_REGISTRY" --resource-group "$AZURE_RESOURCE_GROUP" --query loginServer --output tsv)"
+          image_tag="${login_server}/${IMAGE_REPOSITORY}:${SOURCE_SHA}"
+          az acr login --name "$AZURE_CONTAINER_REGISTRY" --only-show-errors
+          docker build \
+            --build-arg VITE_DEMO_MODE=true \
+            --build-arg OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=true \
+            --build-arg "OPENWEIGHT_BUILD_SHA=${SOURCE_SHA}" \
+            --label "org.opencontainers.image.revision=${SOURCE_SHA}" \
+            --tag "$image_tag" \
+            .
+          docker push "$image_tag"
+          digest="$(az acr repository show --name "$AZURE_CONTAINER_REGISTRY" --image "${IMAGE_REPOSITORY}:${SOURCE_SHA}" --query digest --output tsv)"
+          test "${#digest}" -eq 71
+          immutable_image="${login_server}/${IMAGE_REPOSITORY}@${digest}"
+          echo "immutable_image=$immutable_image" >> "$GITHUB_OUTPUT"
+
+      - name: Stop after bootstrap image publication
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_only }}
+        run: |
+          echo "## Azure bootstrap image" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image pushed by immutable digest; no Container App revision was changed." >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.image.outputs.immutable_image }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy one digest-pinned Container App revision
+        id: release
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.build_only }}
+        env:
+          IMMUTABLE_IMAGE: ${{ steps.image.outputs.immutable_image }}
+        run: |
+          previous_revision="$(az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.latestReadyRevisionName --output tsv)"
+          revision_suffix="sha-${SOURCE_SHA:0:7}"
+          az containerapp update \
+            --name "$AZURE_CONTAINER_APP" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --image "$IMMUTABLE_IMAGE" \
+            --revision-suffix "$revision_suffix" \
+            --only-show-errors \
+            --output none
+          new_revision="$(az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.latestRevisionName --output tsv)"
+          fqdn="$(az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn --output tsv)"
+          test -n "$new_revision"
+          test -n "$fqdn"
+          echo "previous_revision=$previous_revision" >> "$GITHUB_OUTPUT"
+          echo "new_revision=$new_revision" >> "$GITHUB_OUTPUT"
+          echo "application_url=https://${fqdn}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the new revision and verify safe endpoints
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.build_only }}
+        env:
+          IMMUTABLE_IMAGE: ${{ steps.image.outputs.immutable_image }}
+          NEW_REVISION: ${{ steps.release.outputs.new_revision }}
+          APPLICATION_URL: ${{ steps.release.outputs.application_url }}
+        run: |
+          for attempt in {1..30}; do
+            running_state="$(az containerapp revision show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --revision "$NEW_REVISION" --query properties.runningState --output tsv)"
+            health_state="$(az containerapp revision show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --revision "$NEW_REVISION" --query properties.healthState --output tsv)"
+            if [[ "$running_state" == "Running" && "$health_state" == "Healthy" ]]; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              exit 1
+            fi
+            sleep 10
+          done
+          deployed_image="$(az containerapp revision show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --revision "$NEW_REVISION" --query "properties.template.containers[?name=='api'].image | [0]" --output tsv)"
+          test "$deployed_image" = "$IMMUTABLE_IMAGE"
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "${APPLICATION_URL}/healthz" >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "${APPLICATION_URL}/readyz" >/dev/null
+
+      - name: Record revision and rollback information
+        if: ${{ always() && steps.release.outcome != 'skipped' }}
+        env:
+          PREVIOUS_REVISION: ${{ steps.release.outputs.previous_revision }}
+        run: |
+          echo "## Azure Container App release" >> "$GITHUB_STEP_SUMMARY"
+          echo "New revision: \`${{ steps.release.outputs.new_revision }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Previous ready revision: \`${{ steps.release.outputs.previous_revision }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Immutable image: \`${{ steps.image.outputs.immutable_image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Application: ${{ steps.release.outputs.application_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Rollback is a reviewed activation/traffic switch to the previous ready revision; this workflow never performs it automatically." >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$PREVIOUS_REVISION" ]]; then
+            echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+            echo "az containerapp revision activate --name '$AZURE_CONTAINER_APP' --resource-group '$AZURE_RESOURCE_GROUP' --revision '$PREVIOUS_REVISION'" >> "$GITHUB_STEP_SUMMARY"
+            echo "az containerapp ingress traffic set --name '$AZURE_CONTAINER_APP' --resource-group '$AZURE_RESOURCE_GROUP' --revision-weight '$PREVIOUS_REVISION=100'" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi

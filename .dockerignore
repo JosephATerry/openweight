@@ -62,6 +62,7 @@ requirements-ci.txt
 scripts/*
 !scripts/setup_operations.py
 !scripts/setup_security.py
+!scripts/migrate_database.py
 !scripts/index_policy_corpus.py
 
 .DS_Store

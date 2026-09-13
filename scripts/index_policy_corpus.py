@@ -2,10 +2,14 @@
 """Embed and persist the synthetic policy corpus in PostgreSQL."""
 
 import asyncio
+import os
 import time
 
 from openweight_platform.rag.database import PostgresConfig
-from openweight_platform.rag.embeddings import QwenEmbeddings
+from openweight_platform.rag.embeddings import (
+    DEFAULT_EMBEDDING_MODEL_ID,
+    QwenEmbeddings,
+)
 from openweight_platform.rag.indexing import index_policy_corpus
 from openweight_platform.rag.vectorstore import (
     count_policy_chunks,
@@ -16,7 +20,12 @@ from openweight_platform.rag.vectorstore import (
 def main() -> int:
     started_at = time.perf_counter()
     config = PostgresConfig.from_env()
-    embeddings = QwenEmbeddings()
+    embeddings = QwenEmbeddings(
+        model_id=os.environ.get(
+            "OPENWEIGHT_DEMO_EMBEDDING_MODEL",
+            DEFAULT_EMBEDDING_MODEL_ID,
+        )
+    )
     engine = None
 
     try:

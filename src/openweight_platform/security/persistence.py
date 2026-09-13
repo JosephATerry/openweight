@@ -375,6 +375,40 @@ def grant_runtime_database_role(
                         "public.langchain_pg_embedding TO {}"
                     ).format(role)
                 )
+            cursor.execute(
+                "SELECT to_regclass('public.policy_chunks') IS NOT NULL"
+            )
+            if cursor.fetchone() == (True,):
+                cursor.execute(
+                    sql.SQL("GRANT SELECT ON public.policy_chunks TO {}").format(role)
+                )
+
+
+def ensure_runtime_database_role(
+    config: DatabaseConfig,
+    runtime_role: str,
+    runtime_password: str,
+) -> None:
+    """Create or rotate the narrow login role during an explicit migration."""
+
+    if not runtime_role or len(runtime_role) > 63:
+        raise ValueError("runtime_role must be a valid non-empty identifier")
+    if not runtime_password:
+        raise ValueError("runtime_password must not be empty")
+    role = sql.Identifier(runtime_role)
+    with psycopg.connect(**config.connect_kwargs) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %s)",
+                (runtime_role,),
+            )
+            row = cursor.fetchone()
+            if row != (True,):
+                cursor.execute(sql.SQL("CREATE ROLE {} LOGIN").format(role))
+            cursor.execute(
+                sql.SQL("ALTER ROLE {} LOGIN PASSWORD %s").format(role),
+                (runtime_password,),
+            )
 
 
 __all__ = [
@@ -387,6 +421,7 @@ __all__ = [
     "PostgresApprovalSessionStore",
     "SECURITY_SCHEMA_STATEMENTS",
     "open_checkpoint_handle",
+    "ensure_runtime_database_role",
     "grant_runtime_database_role",
     "setup_security_database",
 ]

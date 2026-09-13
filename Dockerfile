@@ -13,11 +13,13 @@ RUN npm run build
 FROM python:3.12.11-slim-bookworm AS runtime
 
 ARG OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false
+ARG OPENWEIGHT_BUILD_SHA=unreleased
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
     HF_HUB_DISABLE_TELEMETRY=1 \
+    OPENWEIGHT_BUILD_SHA=${OPENWEIGHT_BUILD_SHA} \
     OPENWEIGHT_API_HOST=0.0.0.0 \
     OPENWEIGHT_API_PORT=8000
 
@@ -49,6 +51,7 @@ COPY --chown=openweight:openweight deploy/huggingface/policy_index.json ./deploy
 COPY --chown=openweight:openweight deploy/huggingface/policy_index.npz ./deploy/huggingface/policy_index.npz
 COPY --chown=openweight:openweight scripts/setup_operations.py ./scripts/setup_operations.py
 COPY --chown=openweight:openweight scripts/setup_security.py ./scripts/setup_security.py
+COPY --chown=openweight:openweight scripts/migrate_database.py ./scripts/migrate_database.py
 COPY --chown=openweight:openweight scripts/index_policy_corpus.py ./scripts/index_policy_corpus.py
 COPY --chown=openweight:openweight docker/api/healthcheck.py ./docker/api/healthcheck.py
 COPY --from=frontend-build --chown=openweight:openweight \
