@@ -30,6 +30,12 @@ resource "azurerm_subnet" "postgresql" {
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.postgresql_subnet_cidr]
 
+  # Flexible Server adds and relies on this endpoint for Azure Storage-backed
+  # service operations. Model it so later refreshes never plan its removal.
+  service_endpoint {
+    service = "Microsoft.Storage"
+  }
+
   delegation {
     name = "postgresql-flexible-server"
 

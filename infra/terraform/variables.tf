@@ -437,7 +437,7 @@ variable "postgresql_administrator_login" {
 }
 
 variable "postgresql_administrator_password" {
-  description = "Out-of-band creation password. Ephemeral, nullable after creation, and passed only to the provider write-only argument."
+  description = "Out-of-band initial foundation password. Ephemeral, nullable after creation, and passed only to the provider write-only argument."
   type        = string
   default     = null
   nullable    = true
@@ -455,18 +455,18 @@ variable "postgresql_administrator_password" {
       ) || (
       !var.postgresql_administrator_password_required && var.postgresql_administrator_password == null
     )
-    error_message = "Set postgresql_administrator_password_required=true only while supplying the ephemeral creation/rotation password; later stages must leave both disabled/null."
+    error_message = "Set postgresql_administrator_password_required=true only while supplying the ephemeral initial foundation password; later stages must leave both disabled/null."
   }
 }
 
 variable "postgresql_administrator_password_required" {
-  description = "Explicit creation handshake. Set true only while creating/rotating PostgreSQL and supply the ephemeral password in the same operation; keep false for later refreshes and stages."
+  description = "Explicit initial foundation creation handshake. Set true only while creating PostgreSQL and supplying the ephemeral password; keep false for every post-creation operation."
   type        = bool
   default     = false
 }
 
 variable "postgresql_administrator_password_version" {
-  description = "Increment to rotate the provider write-only administrator password."
+  description = "Initial creation marker for the provider write-only password. Post-creation Terraform ignores this marker; administrator rotation is an out-of-band operation."
   type        = number
   default     = 1
 

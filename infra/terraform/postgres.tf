@@ -9,7 +9,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
 
   administrator_login               = var.postgresql_administrator_login
   administrator_password_wo         = var.postgresql_administrator_password
-  administrator_password_wo_version = var.postgresql_administrator_password_version
+  administrator_password_wo_version = var.postgresql_administrator_password_required ? var.postgresql_administrator_password_version : null
 
   sku_name                     = var.postgresql_sku_name
   storage_mb                   = var.postgresql_storage_mb
@@ -33,6 +33,17 @@ resource "azurerm_postgresql_flexible_server" "main" {
   }
 
   tags = local.common_tags
+
+  # Azure selects the initial primary zone and can change it after failover.
+  # The write-only password version is a creation-time state marker; normal
+  # post-creation operations omit the password and must not treat that marker
+  # as a rotation request.
+  lifecycle {
+    ignore_changes = [
+      administrator_password_wo_version,
+      zone,
+    ]
+  }
 
   depends_on = [azurerm_private_dns_zone_virtual_network_link.postgresql]
 }

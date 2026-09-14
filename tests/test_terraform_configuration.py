@@ -105,6 +105,30 @@ def test_private_postgresql_network_and_pgvector_intent() -> None:
     assert "postgresql_minimum_tls_version" in postgres
 
 
+def test_postgresql_subnet_preserves_storage_endpoint_and_delegation() -> None:
+    networking = _read("networking.tf")
+    postgres_subnet = networking.split(
+        'resource "azurerm_subnet" "postgresql"', maxsplit=1
+    )[1].split('resource "azurerm_private_dns_zone"', maxsplit=1)[0]
+
+    assert postgres_subnet.count("service_endpoint {") == 1
+    assert postgres_subnet.count('service = "Microsoft.Storage"') == 1
+    assert 'name = "Microsoft.DBforPostgreSQL/flexibleServers"' in postgres_subnet
+    assert "service_endpoints" not in postgres_subnet
+
+
+def test_consumption_environment_ignores_only_provider_normalized_profile() -> None:
+    environment = _read("container_apps.tf").split(
+        'resource "azurerm_container_app" "api"', maxsplit=1
+    )[0]
+
+    assert "service-managed zero-count Consumption profile" in environment
+    assert "ignore_changes = [workload_profile]" in environment
+    assert "workload_profile {" not in environment
+    assert "Dedicated" not in environment
+    assert "GPU" not in environment
+
+
 def test_default_subnets_are_non_overlapping_children_of_default_vnet() -> None:
     variables = _read("variables.tf")
 
@@ -201,10 +225,90 @@ def test_secret_inputs_are_references_or_ephemeral_not_literal_values() -> None:
     assert "var.postgresql_administrator_password_required" in variables
     assert "later stages must leave both disabled/null" in variables
     assert "administrator_password_wo" in postgres
+    assert (
+        "administrator_password_wo_version = "
+        "var.postgresql_administrator_password_required ? "
+        "var.postgresql_administrator_password_version : null"
+    ) in postgres
     assert "administrator_password   =" not in postgres
     assert "key_vault_secret_id = var.postgresql_application_password_secret_id" in app
     assert "key_vault_secret_id = var.huggingface_token_secret_id" in app
     assert 'value = "change-me' not in _all_terraform().lower()
+
+
+def test_postgresql_write_only_password_pair_is_explicitly_coupled() -> None:
+    variables = _read("variables.tf")
+    postgres = _read("postgres.tf")
+    password_block = re.search(
+        r'variable "postgresql_administrator_password" \{(?P<body>.*?)\n\}',
+        variables,
+        flags=re.DOTALL,
+    )
+
+    assert password_block is not None
+    assert "sensitive   = true" in password_block.group("body")
+    assert "ephemeral   = true" in password_block.group("body")
+    assert "default     = null" in password_block.group("body")
+    assert (
+        "var.postgresql_administrator_password_required && "
+        "var.postgresql_administrator_password != null"
+    ) in password_block.group("body")
+    assert (
+        "!var.postgresql_administrator_password_required && "
+        "var.postgresql_administrator_password == null"
+    ) in password_block.group("body")
+    assert re.search(
+        r"administrator_password_wo_version\s*=\s*"
+        r"var\.postgresql_administrator_password_required\s*\?\s*"
+        r"var\.postgresql_administrator_password_version\s*:\s*null",
+        postgres,
+    )
+    assert "initial foundation password" in password_block.group("body")
+
+
+def test_postgresql_lifecycle_ignores_only_azure_zone_and_creation_marker() -> None:
+    variables = _read("variables.tf")
+    postgres = _read("postgres.tf")
+    zone_block = re.search(
+        r'variable "postgresql_zone" \{(?P<body>.*?)\n\}',
+        variables,
+        flags=re.DOTALL,
+    )
+    lifecycle = re.search(
+        r"lifecycle \{\s*ignore_changes = \[(?P<body>.*?)\]\s*\}",
+        postgres,
+        flags=re.DOTALL,
+    )
+
+    assert zone_block is not None
+    assert 'type        = string' in zone_block.group("body")
+    assert 'default     = null' in zone_block.group("body")
+    assert 'default     = "3"' not in zone_block.group("body")
+    assert lifecycle is not None
+    ignored = {
+        item.strip().rstrip(",")
+        for item in lifecycle.group("body").splitlines()
+        if item.strip()
+    }
+    assert ignored == {"administrator_password_wo_version", "zone"}
+    assert "Azure selects the initial primary zone" in postgres
+    assert "creation-time state marker" in postgres
+    assert 'mode = "ZoneRedundant"' in postgres
+    assert "var.postgresql_high_availability_enabled ? [1] : []" in postgres
+
+
+def test_administrator_password_rotation_contract_is_out_of_band() -> None:
+    variables = _read("variables.tf")
+    readme = (TF_ROOT / "README.md").read_text(encoding="utf-8")
+    postgres = _read("postgres.tf")
+
+    assert "keep false for every post-creation operation" in variables
+    assert "Post-creation Terraform ignores this marker" in variables
+    assert "Do not\n   increment it to rotate an existing server" in readme
+    assert "separately authorized out-of-band Azure operation" in readme
+    assert "future server mutation requires a separate credential-aware review" in readme
+    assert "administrator_password_wo_version" in postgres
+    assert "administrator_password_wo_version," in postgres
 
 
 def test_example_tfvars_contains_no_secret_value() -> None:

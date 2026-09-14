@@ -51,7 +51,12 @@ Log Analytics. Health checks never call an embedding model or GPT-OSS.
    `postgresql_administrator_password_required=true` while supplying the
    sensitive ephemeral password. Later refreshes and stages leave the flag
    false and the nullable password unset; AzureRM receives no replacement value
-   and does not rotate the write-only credential.
+   and does not rotate the write-only credential. The provider persists the
+   creation-time write-only version marker but cannot read the password back;
+   the server lifecycle therefore ignores that marker after creation. Do not
+   increment it to rotate an existing server. Administrator-password rotation
+   is a separately authorized out-of-band Azure operation paired with the Key
+   Vault handoff, not an ordinary Terraform update.
 2. The protected Azure workflow can be manually dispatched in `build_only`
    mode only after the separate `AZURE_BUILD_ENABLED=true` gate is deliberately
    configured. It builds a Linux/amd64 migration image with
@@ -85,6 +90,25 @@ Never jump directly from `foundation` to `application`. Never run migration as
 an app entrypoint, startup hook, Terraform provisioner, or ordinary release
 step. A failed additive migration can be rerun explicitly; no destructive SQL
 is executed automatically.
+
+Flexible Server automatically adds the `Microsoft.Storage` service endpoint to
+its delegated subnet for required Storage-backed service operations. Terraform
+models that endpoint explicitly so later refreshes cannot remove it. Azure also
+returns a service-managed, zero-count `Consumption` workload profile for the
+Container Apps environment even when configuration omits it. AzureRM 5.3.0
+normalizes that default into state and otherwise produces a perpetual removal
+diff, so the environment ignores only `workload_profile`; this stack declares
+no dedicated or GPU profile.
+
+Azure chooses the PostgreSQL primary zone because `postgresql_zone` defaults
+to `null`. AzureRM reads the selected zone back and may also observe a new
+primary after failover, so the server lifecycle ignores `zone` rather than
+trying to move or fail back the server. The lifecycle also ignores only the
+persisted creation-time `administrator_password_wo_version` marker. Initial
+foundation creation still supplies both write-only fields; later Terraform
+operations supply neither. AzureRM 5.3.0 requires the administrator password
+for any actual update to a password-authenticated Flexible Server, so every
+future server mutation requires a separate credential-aware review.
 
 ## Database and pgvector bootstrap
 

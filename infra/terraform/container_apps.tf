@@ -8,6 +8,14 @@ resource "azurerm_container_app_environment" "main" {
   logs_destination               = "log-analytics"
   log_analytics_workspace_id     = azurerm_log_analytics_workspace.main.id
   tags                           = local.common_tags
+
+  # Azure returns its service-managed zero-count Consumption profile even when
+  # configuration omits it. AzureRM 5.3.0 otherwise plans removal on every
+  # refresh; ignore only that API-normalized block. This stack defines no
+  # non-Consumption profile.
+  lifecycle {
+    ignore_changes = [workload_profile]
+  }
 }
 
 resource "azurerm_container_app" "api" {
