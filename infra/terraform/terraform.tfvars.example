@@ -20,10 +20,14 @@ auth_jwks_url = "https://login.example.invalid/tenant-id/discovery/v2.0/keys"
 
 # Keep false through foundation bootstrap. Deliberately enable only after the
 # protected GitHub Environment and reviewed trust values exist.
-github_federation_enabled = false
-github_repository_owner   = "JosephATerry"
-github_repository         = "openweight"
-github_environment        = "azure-production"
+# The numeric owner/repository IDs are public immutable GitHub identifiers,
+# not credentials; verify them against the repository being federated.
+github_federation_enabled  = false
+github_repository_owner    = "JosephATerry"
+github_repository_owner_id = "204825811"
+github_repository          = "openweight"
+github_repository_id       = "1363713223"
+github_environment         = "azure-production"
 
 # Authorized operations create these secrets between the foundation and later
 # migration/indexing stages. These are references only; values never belong in tfvars.

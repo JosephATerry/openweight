@@ -17,6 +17,23 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def terraform_variable_block(source: str, name: str) -> str:
+    match = re.search(
+        rf'variable "{re.escape(name)}" \{{(?P<body>.*?)\n\}}',
+        source,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    return match.group("body")
+
+
+def terraform_string_default(source: str, name: str) -> str:
+    block = terraform_variable_block(source, name)
+    match = re.search(r'default\s*=\s*"(?P<value>[^"]+)"', block)
+    assert match is not None
+    return match.group("value")
+
+
 def test_auth_and_metrics_configuration_defaults_are_local_safe() -> None:
     settings = ServiceSettings.from_env(
         {
@@ -101,7 +118,18 @@ def test_terraform_separates_runtime_and_ci_identity_permissions() -> None:
 def test_github_oidc_contract_is_disabled_and_parameterized_without_secret() -> None:
     identities = read("infra/terraform/identities.tf")
     variables = read("infra/terraform/variables.tf")
+    locals_tf = read("infra/terraform/locals.tf")
     checks = read("infra/terraform/checks.tf")
+    example = read("infra/terraform/terraform.tfvars.example")
+    oidc_docs = "\n".join(
+        read(path)
+        for path in (
+            "infra/terraform/README.md",
+            "docs/azure_architecture.md",
+            "docs/ci_cd.md",
+            "docs/security.md",
+        )
+    )
     all_tf = "\n".join(
         path.read_text(encoding="utf-8") for path in sorted(TF_ROOT.glob("*.tf"))
     ).lower()
@@ -109,14 +137,66 @@ def test_github_oidc_contract_is_disabled_and_parameterized_without_secret() -> 
     assert 'resource "azurerm_federated_identity_credential" "github"' in identities
     assert "var.github_federation_enabled ? 1 : 0" in identities
     assert "user_assigned_identity_id = azurerm_user_assigned_identity.ci.id" in identities
-    assert "https://token.actions.githubusercontent.com" in identities
-    assert "api://AzureADTokenExchange" in identities
+    assert re.search(
+        r'issuer\s*=\s*"https://token\.actions\.githubusercontent\.com"',
+        identities,
+    )
+    assert re.search(
+        r'audience\s*=\s*\["api://AzureADTokenExchange"\]',
+        identities,
+    )
     assert 'default     = false' in re.search(
         r'variable "github_federation_enabled" \{(.*?)\n\}',
         variables,
         flags=re.DOTALL,
     ).group(1)
     assert "placeholder-owner" in checks
+    assert "github_repository_owner_id" in checks
+    assert "github_repository_id" in checks
+    for variable in ("github_repository_owner_id", "github_repository_id"):
+        block = terraform_variable_block(variables, variable)
+        assert "type        = string" in block
+        pattern_match = re.search(r'can\(regex\("(?P<pattern>[^\"]+)"', block)
+        assert pattern_match is not None
+        pattern = pattern_match.group("pattern")
+        assert re.fullmatch(pattern, terraform_string_default(variables, variable))
+        assert all(
+            re.fullmatch(pattern, invalid) is None
+            for invalid in ("", "0", "01", "-1", "123x", "1.5")
+        )
+
+    owner = terraform_string_default(variables, "github_repository_owner")
+    owner_id = terraform_string_default(variables, "github_repository_owner_id")
+    repository = terraform_string_default(variables, "github_repository")
+    repository_id = terraform_string_default(variables, "github_repository_id")
+    environment = terraform_string_default(variables, "github_environment")
+    subject = (
+        f"repo:{owner}@{owner_id}/{repository}@{repository_id}:"
+        f"environment:{environment}"
+    )
+    assert subject == (
+        "repo:JosephATerry@204825811/openweight@1363713223:"
+        "environment:azure-production"
+    )
+    assert "${var.github_repository_owner}@${var.github_repository_owner_id}" in locals_tf
+    assert "/${var.github_repository}@${var.github_repository_id}" in locals_tf
+    assert ":environment:${var.github_environment}" in locals_tf
+    assert "repo:${var.github_repository_owner}/${var.github_repository}" not in locals_tf
+    assert "*" not in "\n".join(
+        line for line in locals_tf.splitlines() if "github_oidc" in line
+    )
+    assert "repo:JosephATerry/openweight:environment:azure-production" not in oidc_docs
+    assert "*" not in subject
+    assert re.search(
+        rf'^github_repository_owner_id\s*=\s*"{re.escape(owner_id)}"$',
+        example,
+        flags=re.MULTILINE,
+    )
+    assert re.search(
+        rf'^github_repository_id\s*=\s*"{re.escape(repository_id)}"$',
+        example,
+        flags=re.MULTILINE,
+    )
     assert "azure_client_secret" not in all_tf
 
 

@@ -38,10 +38,11 @@ locals {
     "/subscriptions/${data.azurerm_client_config.current.subscription_id}",
     "/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6",
   ])
+  github_oidc_repository = "${var.github_repository_owner}@${var.github_repository_owner_id}/${var.github_repository}@${var.github_repository_id}"
   github_oidc_subject = var.github_environment == null ? (
-    "repo:${var.github_repository_owner}/${var.github_repository}:ref:refs/heads/${var.github_branch}"
+    "repo:${local.github_oidc_repository}:ref:refs/heads/${var.github_branch}"
     ) : (
-    "repo:${var.github_repository_owner}/${var.github_repository}:environment:${var.github_environment}"
+    "repo:${local.github_oidc_repository}:environment:${var.github_environment}"
   )
 
   common_tags = merge(

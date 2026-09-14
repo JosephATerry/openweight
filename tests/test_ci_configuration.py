@@ -368,6 +368,7 @@ def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:
         "contents": "read",
         "id-token": "write",
     }
+    assert deploy["environment"]["name"] == "azure-production"
     assert all(SHA_PIN.fullmatch(reference) for reference in action_references)
     assert any(reference.startswith("azure/login@") for reference in action_references)
     assert "${{ vars.AZURE_CLIENT_ID }}" in source

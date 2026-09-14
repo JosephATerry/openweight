@@ -16,6 +16,14 @@ optional GitHub OIDC federation bound to an Environment, manual jobs, and the pu
 HTTPS app. Federation is disabled by default until D19E/F deliberately enables
 the reviewed trust.
 
+GitHub repositories created after July 15, 2026 use immutable default OIDC
+subjects. The public, non-secret `github_repository_owner_id` and
+`github_repository_id` inputs bind Azure trust to both names and stable GitHub
+IDs. They must describe the repository being federated; Terraform never looks
+them up at runtime. For this repository and its protected Environment, the
+subject is
+`repo:JosephATerry@204825811/openweight@1363713223:environment:azure-production`.
+
 The application container is CPU-only. It contains the React build and FastAPI
 service, not GPT-OSS weights. Generation follows the existing tested route:
 

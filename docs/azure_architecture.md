@@ -142,8 +142,14 @@ SHA is still current main before requesting an OIDC token. The federated
 subject is exactly:
 
 ```text
-repo:JosephATerry/openweight:environment:azure-production
+repo:JosephATerry@204825811/openweight@1363713223:environment:azure-production
 ```
+
+GitHub repositories created after July 15, 2026 use immutable default OIDC
+subjects. Owner and repository IDs are public identifiers, not credentials;
+including them preserves the trust identity across renames and prevents a
+reused namespace from inheriting Azure trust. The configured names and IDs
+must all correspond to the repository being federated.
 
 The protected GitHub Environment supplies non-secret tenant, subscription,
 client, resource-group, registry, and app identifiers. No client secret exists.

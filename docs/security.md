@@ -73,6 +73,11 @@ The optional Azure GitHub federated credential remains disabled until an Azure
 deployment supplies reviewed repository, branch, or protected-environment trust
 values. Its trust flow is GitHub OIDC to Microsoft Entra ID with audience
 `api://AzureADTokenExchange`; no `AZURE_CLIENT_SECRET` is designed or stored.
+The subject uses GitHub's immutable repository identity:
+`repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:<environment>`. Public
+numeric owner/repository IDs keep trust stable across renames and prevent
+namespace reuse; for this deployment the Environment remains
+`azure-production` and is restricted to `main`.
 The runtime identity receives no push/deployment permission, and the CI
 identity receives no Key Vault secret-read or database-data permission.
 

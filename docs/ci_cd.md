@@ -158,6 +158,13 @@ still current main. The `azure-production` GitHub Environment and matching
 Terraform federated subject gate issuance of the short-lived Azure token.
 Deployments are serialized and never cancel an in-progress production release.
 
+The trust uses GitHub's immutable default subject shape
+`repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:<environment>`. For this
+repository it is
+`repo:JosephATerry@204825811/openweight@1363713223:environment:azure-production`.
+The numeric IDs are public GitHub identifiers rather than credentials and must
+match the repository configured for federation.
+
 The Environment must define non-secret variables `AZURE_CLIENT_ID`,
 `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_REGISTRY`, and `AZURE_CONTAINER_APP`. No Azure client secret,

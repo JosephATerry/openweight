@@ -74,11 +74,17 @@ check "github_federation_uses_real_trust_values" {
     condition = !var.github_federation_enabled || (
       var.github_repository_owner != "placeholder-owner" &&
       var.github_repository != "placeholder-repository" &&
-      length(trimspace(var.github_repository_owner)) > 0 &&
-      length(trimspace(var.github_repository)) > 0 &&
+      length(var.github_repository_owner) <= 39 &&
+      can(regex("^[A-Za-z0-9][A-Za-z0-9-]*$", var.github_repository_owner)) &&
+      !endswith(var.github_repository_owner, "-") &&
+      can(regex("^[1-9][0-9]*$", var.github_repository_owner_id)) &&
+      length(var.github_repository) <= 100 &&
+      can(regex("^[A-Za-z0-9._-]+$", var.github_repository)) &&
+      can(regex("^[1-9][0-9]*$", var.github_repository_id)) &&
       var.github_environment != null &&
-      length(trimspace(var.github_environment)) > 0
+      length(var.github_environment) <= 255 &&
+      can(regex("^[A-Za-z0-9._-]+$", var.github_environment))
     )
-    error_message = "Enable GitHub federation only after supplying the real repository owner and name."
+    error_message = "Enable GitHub federation only with the real immutable repository owner/name/IDs and a protected GitHub Environment."
   }
 }

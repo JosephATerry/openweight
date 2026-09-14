@@ -209,10 +209,32 @@ variable "github_repository_owner" {
   default     = "JosephATerry"
 }
 
+variable "github_repository_owner_id" {
+  description = "Public immutable numeric GitHub owner ID trusted by federation."
+  type        = string
+  default     = "204825811"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.github_repository_owner_id))
+    error_message = "github_repository_owner_id must be a positive decimal GitHub owner ID."
+  }
+}
+
 variable "github_repository" {
   description = "Canonical GitHub repository trusted by federation."
   type        = string
   default     = "openweight"
+}
+
+variable "github_repository_id" {
+  description = "Public immutable numeric GitHub repository ID trusted by federation."
+  type        = string
+  default     = "1363713223"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.github_repository_id))
+    error_message = "github_repository_id must be a positive decimal GitHub repository ID."
+  }
 }
 
 variable "github_branch" {
