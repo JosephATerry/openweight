@@ -25,15 +25,16 @@ github_repository_owner   = "JosephATerry"
 github_repository         = "openweight"
 github_environment        = "azure-production"
 
-# Authorized operations create these secrets between the foundation and
-# bootstrap stages. These are references only; values never belong in tfvars.
+# Authorized operations create these secrets between the foundation and later
+# migration/indexing stages. These are references only; values never belong in tfvars.
 postgresql_administrator_password_secret_id = "https://kv-replace123-cus-owp.vault.azure.net/secrets/postgres-admin-password"
 postgresql_application_password_secret_id = "https://kv-replace123-cus-owp.vault.azure.net/secrets/postgres-application-password"
 huggingface_token_secret_id               = "https://kv-replace123-cus-owp.vault.azure.net/secrets/huggingface-inference-token"
 
-# Deliberately omitted: postgresql_administrator_password. Supply that ephemeral
-# bootstrap value out of band (for example TF_VAR_postgresql_administrator_password)
-# only during a future authorized plan/apply workflow.
+# Deliberately omitted: postgresql_administrator_password. For initial database
+# creation only, set postgresql_administrator_password_required=true and supply
+# the ephemeral value out of band (for example through TF_VAR_...). Leave the
+# handshake false and the password null for every later refresh/stage.
 
 additional_tags = {
   component = "enterprise-agent-api"

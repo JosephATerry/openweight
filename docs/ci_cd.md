@@ -170,12 +170,19 @@ deployed digest, and calls only `/healthz` and `/readyz`; neither endpoint makes
 a model request. The summary records the previous ready revision so rollback is
 a deliberate reviewed revision activation, not an automatic hidden mutation.
 
-A manual `build_only` dispatch exists for first-deploy bootstrap. It is also
-disabled until `AZURE_DEPLOY_ENABLED` is exactly `true`; once enabled, it can
-push the initial digest but cannot deploy an application or bypass successful
-CI.
-Database migration and policy indexing are separately triggered Container Apps
-Jobs and are never part of steady-state CD. The Azure workflow does not upload
+A manual `build_only` dispatch exists for the model-free migration image. It is
+disabled until the separate non-secret `AZURE_BUILD_ENABLED` variable is
+exactly `true`; `AZURE_DEPLOY_ENABLED` remains an independent gate for normal
+CI-driven releases. Build-only forces
+`OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`, targets Linux/amd64, pushes the
+source-SHA tag, records its immutable ACR digest, and then stops. It cannot
+apply Terraform, start a Container Apps Job, change the database, deploy an
+application, or bypass the later reviewed lifecycle.
+
+Database migration and policy indexing use separately privileged, manually
+triggered Container Apps Jobs and are never part of steady-state CD. Migration
+receives the two database secrets; later indexing receives only the application
+database secret. The Azure workflow does not upload
 to Hugging Face, and the Hugging Face workflow does not authenticate to Azure.
 
 ## Local parity

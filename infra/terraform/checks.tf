@@ -23,7 +23,7 @@ check "image_comes_from_stack_registry" {
       startswith(lower(var.container_image), "${local.container_registry_name}.azurecr.io/"),
       false,
     )
-    error_message = "Bootstrap/application stages require an ACR image pinned by digest."
+    error_message = "Migration, indexing, and application stages require an ACR image pinned by digest."
   }
 }
 
@@ -31,19 +31,34 @@ check "runtime_secret_comes_from_stack_vault" {
   assert {
     condition = !local.application_enabled || (
       try(startswith(lower(var.postgresql_application_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false) &&
+      local.postgresql_application_secret_name == "postgres-application-password" && # pragma: allowlist secret
       try(startswith(lower(var.huggingface_token_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false)
     )
     error_message = "The application stage requires PostgreSQL and HF secret references from this stack's Key Vault."
   }
 }
 
-check "bootstrap_secrets_come_from_stack_vault" {
+check "migration_secrets_come_from_stack_vault" {
   assert {
-    condition = !local.bootstrap_enabled || (
+    condition = !local.migration_enabled || (
       try(startswith(lower(var.postgresql_administrator_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false) &&
-      try(startswith(lower(var.postgresql_application_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false)
+      try(startswith(lower(var.postgresql_application_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"), false) &&
+      local.postgresql_administrator_secret_name == "postgres-admin-password" &&  # pragma: allowlist secret
+      local.postgresql_application_secret_name == "postgres-application-password" # pragma: allowlist secret
     )
-    error_message = "The bootstrap stage requires both database secret references from this stack's Key Vault."
+    error_message = "The migration stage requires both database secret references from this stack's Key Vault."
+  }
+}
+
+check "policy_index_secret_comes_from_stack_vault" {
+  assert {
+    condition = !local.policy_index_enabled || (
+      try(
+        startswith(lower(var.postgresql_application_password_secret_id), "https://${local.key_vault_name}.vault.azure.net/secrets/"),
+        false,
+      ) && local.postgresql_application_secret_name == "postgres-application-password" # pragma: allowlist secret
+    )
+    error_message = "The indexing stage requires only the application database secret reference from this stack's Key Vault."
   }
 }
 

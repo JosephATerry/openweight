@@ -75,12 +75,16 @@ individual secret resources:
 | Identity | Allowed | Not allowed |
 |---|---|---|
 | Runtime managed identity | ACR pull; runtime DB password; Azure HF token | DB admin secret, ACR push, deployment |
-| Temporary bootstrap identity | ACR pull; two DB bootstrap secrets | HF token, application deployment |
+| Temporary migration identity | ACR pull; DB administrator and application secrets | HF token, application deployment |
+| Temporary policy-index identity | ACR pull; application DB secret | DB administrator secret, HF token, application deployment |
 | GitHub OIDC CI identity | ACR push; update the one app after it exists | Key Vault data, database data, subscription-wide ownership |
 
-The bootstrap identity and jobs exist only during the Terraform `bootstrap`
-or later `maintenance` stage. Moving to `application` removes that elevated
-path; `maintenance` does not remove the already-running app.
+The migration identity/job exists only during `migration` or
+`maintenance_migration`;
+the separately privileged policy-index identity/job exists only during
+`indexing` or `maintenance_indexing`. Moving to `application` removes both
+elevated paths; each maintenance variant retains the running app while enabling
+exactly one reviewed privileged path.
 
 ## PostgreSQL bootstrap and readiness
 
@@ -99,6 +103,9 @@ Policy embeddings are a second manual job so a schema migration never silently
 executes a model. It runs only after migration succeeds. The app is created only
 after both jobs are verified. Ordinary app deploys never run either job.
 
+The small portfolio corpus deliberately uses exact pgvector scanning. D19G
+creates neither HNSW nor IVFFlat; ANN remains a later measured optimization.
+
 `/healthz` checks process liveness only. `/readyz` performs bounded,
 read-only checks for configuration, PostgreSQL connectivity, checkpoint and
 approval tables, the vector extension, a nonempty policy index, and presence of
@@ -109,11 +116,12 @@ the HF credential. It does not generate text or embed a query.
 ```mermaid
 flowchart LR
     state[State bootstrap\nStandard LRS] --> foundation[Terraform foundation]
-    foundation --> image[Azure CD build_only\npush digest]
+    foundation --> image[Azure CD build_only\nmodel-free migration digest]
     image --> secrets[Operator creates\nKey Vault secrets]
-    secrets --> jobs[Terraform bootstrap\nmanual jobs]
-    jobs --> verify[Run/verify migration\nthen policy index]
-    verify --> application[Terraform application\ndigest-pinned app]
+    secrets --> jobs[Terraform migration\nmanual migration job only]
+    jobs --> verify[Run and verify migration]
+    verify --> index[Separate indexing stage\nmodel-enabled digest]
+    index --> application[Terraform application\ndigest-pinned app]
     application --> steady[CI-gated steady-state CD]
 ```
 
@@ -150,7 +158,10 @@ Revision names, the previous ready revision, and reviewed rollback guidance are
 written to the job summary. It never automatically calls HF/Groq or rolls back.
 
 The manual `build_only` dispatch exists solely to break the first-deploy
-ordering; it cannot deploy the app. Normal deployments require successful CI.
+ordering. It requires the separate `AZURE_BUILD_ENABLED=true` gate and forces
+`OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`; it cannot deploy the app, apply
+Terraform, start a job, or modify the database. Normal deployments still
+require `AZURE_DEPLOY_ENABLED=true` and successful CI.
 The Hugging Face Space workflow, Trusted Publisher, runtime secret, profile,
 portable state, and public URL remain separate and unchanged.
 

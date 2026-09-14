@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -57,12 +58,14 @@ def test_no_state_plan_or_private_override_is_committed() -> None:
         "override.tf",
         "backend.hcl",
     )
-    relative_files = [
-        str(path.relative_to(ROOT))
-        for path in ROOT.rglob("*")
-        if path.is_file() and ".terraform" not in path.relative_to(ROOT).parts
-    ]
-    assert not any(any(marker in path for marker in prohibited) for path in relative_files)
+    tracked_files = subprocess.run(
+        ["git", "ls-files", "infra/terraform"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert not any(any(marker in path for marker in prohibited) for path in tracked_files)
 
 
 def test_no_aks_gpu_or_terraform_provisioner_exists() -> None:
@@ -136,7 +139,10 @@ def test_key_vault_has_rbac_without_secret_payload_resource() -> None:
     assert "rbac_authorization_enabled    = true" in key_vault
     assert "purge_protection_enabled      = true" in key_vault
     assert 'resource "azurerm_key_vault_secret"' not in terraform
-    assert 'role_definition_name = "Key Vault Secrets User"' in _read("identities.tf")
+    identities = _read("identities.tf")
+    locals_tf = _read("locals.tf")
+    assert "4633458b-17de-408a-b874-0445c86b69e6" in locals_tf
+    assert "role_definition_id = local.key_vault_secrets_user_role_definition_id" in identities
 
 
 def test_container_app_uses_identity_safe_probes_and_scale_to_zero() -> None:
@@ -190,6 +196,10 @@ def test_secret_inputs_are_references_or_ephemeral_not_literal_values() -> None:
     assert 'variable "postgresql_administrator_password"' in variables
     assert "sensitive   = true" in variables
     assert "ephemeral   = true" in variables
+    assert "default     = null" in variables
+    assert 'variable "postgresql_administrator_password_required"' in variables
+    assert "var.postgresql_administrator_password_required" in variables
+    assert "later stages must leave both disabled/null" in variables
     assert "administrator_password_wo" in postgres
     assert "administrator_password   =" not in postgres
     assert "key_vault_secret_id = var.postgresql_application_password_secret_id" in app
@@ -241,24 +251,76 @@ def test_existing_ci_has_no_azure_deployment_or_terraform_apply() -> None:
     assert "az login" not in lowered
 
 
-def test_staged_bootstrap_jobs_are_manual_additive_and_model_free_by_default() -> None:
+def test_staged_migration_and_indexing_jobs_are_separate_and_disabled_by_default() -> None:
     jobs = _read("bootstrap_jobs.tf")
+    identities = _read("identities.tf")
+    locals_tf = _read("locals.tf")
     migration = (ROOT / "scripts" / "migrate_database.py").read_text(
         encoding="utf-8"
     )
 
-    assert 'contains(["bootstrap", "maintenance"], var.deployment_stage)' in _read(
-        "locals.tf"
-    )
-    assert 'manual_trigger_config {' in jobs
-    assert 'replica_retry_limit          = 0' in jobs
-    assert "migrate_database.py" in jobs
-    assert "index_policy_corpus.py" in jobs
+    assert 'default     = "foundation"' in _read("variables.tf")
+    assert 'contains(["migration", "maintenance_migration"], var.deployment_stage)' in locals_tf
+    assert 'contains(["indexing", "maintenance_indexing"], var.deployment_stage)' in locals_tf
+    assert 'contains(["application", "maintenance_migration", "maintenance_indexing"], var.deployment_stage)' in locals_tf
+    assert '"maintenance"' not in locals_tf
+    assert 'resource "azurerm_container_app_job" "database_migration"' in jobs
+    assert 'resource "azurerm_container_app_job" "policy_index"' in jobs
+    assert jobs.count('manual_trigger_config {') == 2
+    assert jobs.count('replica_retry_limit          = 0') == 2
+    assert '["python", "scripts/migrate_database.py", "--seed-demo-data"]' in jobs
+    assert '["python", "scripts/index_policy_corpus.py"]' in jobs
+    assert "ingress" not in jobs
+    assert 'azurerm_user_assigned_identity.migration[0].id' in jobs
+    assert 'azurerm_user_assigned_identity.policy_index[0].id' in jobs
+    assert 'resource "azurerm_user_assigned_identity" "migration"' in identities
+    assert 'resource "azurerm_user_assigned_identity" "policy_index"' in identities
+    assert '"id-${local.name_base}-migrate-${var.region_code}"' in locals_tf
+    assert '"id-${local.name_base}-index-${var.region_code}"' in locals_tf
+    assert 'scope                = azurerm_container_registry.main.id' in identities
+    assert identities.count("role_definition_id = local.key_vault_secrets_user_role_definition_id") == 3
     assert "CREATE EXTENSION IF NOT EXISTS vector" in migration
     assert "schema_migrations" in migration
     assert "pg_advisory_lock" in migration
     assert "PostgresSaver" in migration
     assert "generate" not in migration
+
+
+def test_migration_and_runtime_secret_boundaries_are_non_overlapping() -> None:
+    jobs = _read("bootstrap_jobs.tf")
+    identities = _read("identities.tf")
+    app = _read("container_apps.tf")
+
+    migration_job, policy_job = jobs.split(
+        'resource "azurerm_container_app_job" "policy_index"', maxsplit=1
+    )
+    assert 'key_vault_secret_id = var.postgresql_administrator_password_secret_id' in migration_job
+    assert 'key_vault_secret_id = var.postgresql_application_password_secret_id' in migration_job
+    assert "postgres-admin-password" not in policy_job
+    assert "POSTGRES_APPLICATION_PASSWORD" not in policy_job
+    assert 'key_vault_secret_id = var.postgresql_application_password_secret_id' in policy_job
+    assert "postgresql_administrator" not in app
+    assert 'resource "azurerm_role_assignment" "migration_key_vault_secrets"' in identities
+    assert 'resource "azurerm_role_assignment" "policy_index_key_vault_secret"' in identities
+    assert "Owner" not in identities
+    assert 'role_definition_name = "Contributor"' not in identities
+
+
+def test_migration_job_uses_private_tls_digest_and_versionless_secret_references() -> None:
+    jobs = _read("bootstrap_jobs.tf")
+    variables = _read("variables.tf")
+
+    assert 'value = azurerm_postgresql_flexible_server.main.fqdn' in jobs
+    assert 'value = "5432"' in jobs
+    assert 'value = "verify-full"' in jobs
+    assert 'value = "system"' in jobs
+    assert 'value = azurerm_postgresql_flexible_server_database.application.name' in jobs
+    assert 'parallelism              = 1' in jobs
+    assert 'replica_completion_count = 1' in jobs
+    assert '@sha256:' in jobs
+    assert 'can(regex("@sha256:[0-9a-fA-F]{64}$"' in variables
+    assert variables.count("versionless Azure Key Vault") >= 2
+    assert 'resource "azurerm_key_vault_secret"' not in _all_terraform()
 
 
 def test_remote_state_bootstrap_is_low_cost_protected_and_separate() -> None:

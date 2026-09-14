@@ -323,11 +323,36 @@ def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
     condition = deploy["if"]
     source = read(AZURE_DEPLOY_WORKFLOW_PATH)
 
-    assert condition.startswith("vars.AZURE_DEPLOY_ENABLED == 'true' &&")
+    assert "vars.AZURE_DEPLOY_ENABLED == 'true'" in condition
     assert "workflow_dispatch' && inputs.build_only" in condition
+    assert "vars.AZURE_BUILD_ENABLED == 'true'" in condition
     assert "AZURE_DEPLOY_ENABLED: ${{ vars.AZURE_DEPLOY_ENABLED }}" not in source
     assert "secrets.AZURE_DEPLOY_ENABLED" not in source
     assert "vars.AZURE_DEPLOY_ENABLED" not in all_run_commands(configuration)
+
+
+def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> None:
+    configuration = azure_deploy_workflow()
+    deploy = configuration["jobs"]["deploy"]
+    condition = deploy["if"]
+    source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+    commands = all_run_commands(configuration)
+    normalized_condition = " ".join(condition.split())
+
+    assert (
+        "github.event_name == 'workflow_dispatch' && inputs.build_only && "
+        "vars.AZURE_BUILD_ENABLED == 'true'"
+    ) in normalized_condition
+    assert "secrets.AZURE_BUILD_ENABLED" not in source
+    assert "vars.AZURE_BUILD_ENABLED" not in commands
+    assert "preload_demo_embeddings=false" in commands
+    assert '--platform linux/amd64' in commands
+    assert "IMAGE_REPOSITORY}:${SOURCE_SHA}" in commands
+    assert "@${digest}" in commands
+    assert "terraform plan" not in commands
+    assert "terraform apply" not in commands
+    assert "containerapp job start" not in commands
+    assert "keyvault secret" not in commands
 
 
 def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:

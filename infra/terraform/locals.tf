@@ -8,7 +8,8 @@ locals {
   container_registry_name     = substr("acr${replace(var.project_name, "-", "")}${replace(var.environment, "-", "")}${var.region_code}${var.unique_suffix}", 0, 50)
   runtime_identity_name       = "id-${local.name_base}-api-${var.region_code}"
   ci_identity_name            = "id-${local.name_base}-ci-${var.region_code}"
-  bootstrap_identity_name     = "id-${local.name_base}-bootstrap-${var.region_code}"
+  migration_identity_name     = "id-${local.name_base}-migrate-${var.region_code}"
+  policy_index_identity_name  = "id-${local.name_base}-index-${var.region_code}"
   log_analytics_name          = "log-${local.name_base}-${var.region_code}"
   key_vault_name              = substr("kv-${var.unique_suffix}-${var.region_code}-${replace(var.project_name, "-", "")}", 0, 24)
   postgresql_server_name      = substr("psql-${var.unique_suffix}-${var.region_code}-${local.name_base}", 0, 63)
@@ -17,9 +18,10 @@ locals {
   container_app_name          = substr("ca-${local.name_base}-api", 0, 32)
   migration_job_name          = substr("caj-${local.name_base}-migrate", 0, 32)
   policy_index_job_name       = substr("caj-${local.name_base}-index", 0, 32)
-  bootstrap_enabled           = contains(["bootstrap", "maintenance"], var.deployment_stage)
-  application_enabled         = contains(["application", "maintenance"], var.deployment_stage)
-  image_consumers_enabled     = local.bootstrap_enabled || local.application_enabled
+  migration_enabled           = contains(["migration", "maintenance_migration"], var.deployment_stage)
+  policy_index_enabled        = contains(["indexing", "maintenance_indexing"], var.deployment_stage)
+  application_enabled         = contains(["application", "maintenance_migration", "maintenance_indexing"], var.deployment_stage)
+  image_consumers_enabled     = local.migration_enabled || local.policy_index_enabled || local.application_enabled
   postgresql_application_secret_name = (
     var.postgresql_application_password_secret_id == null ? null :
     element(split("/", var.postgresql_application_password_secret_id), 4)
@@ -32,6 +34,10 @@ locals {
     var.huggingface_token_secret_id == null ? null :
     element(split("/", var.huggingface_token_secret_id), 4)
   )
+  key_vault_secrets_user_role_definition_id = join("", [
+    "/subscriptions/${data.azurerm_client_config.current.subscription_id}",
+    "/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6",
+  ])
   github_oidc_subject = var.github_environment == null ? (
     "repo:${var.github_repository_owner}/${var.github_repository}:ref:refs/heads/${var.github_branch}"
     ) : (

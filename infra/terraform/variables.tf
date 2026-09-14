@@ -57,18 +57,18 @@ variable "additional_tags" {
 }
 
 variable "deployment_stage" {
-  description = "Explicit lifecycle stage: foundation, first bootstrap, application, or later maintenance with app plus manual jobs."
+  description = "Explicit lifecycle stage. Maintenance variants retain the application while enabling exactly one separately privileged manual job."
   type        = string
   default     = "foundation"
 
   validation {
-    condition     = contains(["foundation", "bootstrap", "application", "maintenance"], var.deployment_stage)
-    error_message = "deployment_stage must be foundation, bootstrap, application, or maintenance."
+    condition     = contains(["foundation", "migration", "indexing", "application", "maintenance_migration", "maintenance_indexing"], var.deployment_stage)
+    error_message = "deployment_stage must be foundation, migration, indexing, application, maintenance_migration, or maintenance_indexing."
   }
 }
 
 variable "container_image" {
-  description = "Immutable application image reference. Required only for bootstrap and application stages."
+  description = "Immutable ACR image reference. Required only for migration, indexing, and application stages."
   type        = string
   default     = null
   nullable    = true
@@ -409,21 +409,38 @@ variable "postgresql_database_name" {
 }
 
 variable "postgresql_administrator_login" {
-  description = "Bootstrap-only database administrator login; the API must use a separate D14 role."
+  description = "Migration-only database administrator login; indexing and the API use the separate application role."
   type        = string
   default     = "owp_tf_admin"
 }
 
 variable "postgresql_administrator_password" {
-  description = "Out-of-band bootstrap password. Ephemeral and passed only to the provider write-only argument."
+  description = "Out-of-band creation password. Ephemeral, nullable after creation, and passed only to the provider write-only argument."
   type        = string
+  default     = null
+  nullable    = true
   sensitive   = true
   ephemeral   = true
 
   validation {
-    condition     = length(var.postgresql_administrator_password) >= 16
-    error_message = "postgresql_administrator_password must contain at least 16 characters."
+    condition     = var.postgresql_administrator_password == null || length(var.postgresql_administrator_password) >= 16
+    error_message = "When supplied, postgresql_administrator_password must contain at least 16 characters."
   }
+
+  validation {
+    condition = (
+      var.postgresql_administrator_password_required && var.postgresql_administrator_password != null
+      ) || (
+      !var.postgresql_administrator_password_required && var.postgresql_administrator_password == null
+    )
+    error_message = "Set postgresql_administrator_password_required=true only while supplying the ephemeral creation/rotation password; later stages must leave both disabled/null."
+  }
+}
+
+variable "postgresql_administrator_password_required" {
+  description = "Explicit creation handshake. Set true only while creating/rotating PostgreSQL and supply the ephemeral password in the same operation; keep false for later refreshes and stages."
+  type        = bool
+  default     = false
 }
 
 variable "postgresql_administrator_password_version" {
@@ -438,13 +455,13 @@ variable "postgresql_administrator_password_version" {
 }
 
 variable "postgresql_application_login" {
-  description = "Least-privilege runtime role created later by the D14 migration/bootstrap lifecycle."
+  description = "Least-privilege application role created by the explicit database migration lifecycle."
   type        = string
   default     = "openweight_app"
 }
 
 variable "postgresql_application_password_secret_id" {
-  description = "Versionless Key Vault secret URI created out of band in D14; this is a reference, not a secret value."
+  description = "Versionless Key Vault application-password secret URI created out of band; this is a reference, not a secret value."
   type        = string
   default     = null
   nullable    = true
@@ -456,7 +473,7 @@ variable "postgresql_application_password_secret_id" {
 }
 
 variable "postgresql_administrator_password_secret_id" {
-  description = "Versionless Key Vault URI used only by the temporary bootstrap jobs."
+  description = "Versionless Key Vault administrator-password URI used only by the temporary migration job."
   type        = string
   default     = null
   nullable    = true

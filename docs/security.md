@@ -62,6 +62,10 @@ document content are excluded from logs, metrics, spans, and ordinary errors.
 Terraform defines separate user-assigned identities:
 
 - runtime identity: `AcrPull` and `Key Vault Secrets User` only;
+- migration identity: ACR pull plus secret-scoped read access to the database
+  administrator and application credentials only;
+- policy-index identity: ACR pull plus secret-scoped read access to only the
+  application database credential;
 - CI identity: `AcrPush` on the stack registry and `Container Apps Contributor`
   scoped to the one API Container App.
 
@@ -94,12 +98,14 @@ the system trust roots. Compose keeps `prefer` for local ergonomics.
 LangGraph checkpoint tables and the application security tables. If an existing
 `POSTGRES_APPLICATION_ROLE` is supplied, it grants only connect/schema usage,
 required reads, the one `approval_status` column update, security-ledger DML,
-checkpoint DML, and policy-vector reads. It does not create a role or password.
-Role creation/password rotation remains an explicitly authorized bootstrap
-operation; the API must never use the server administrator login. Policy-table
-grants are applied only after both indexing tables exist, so rerun the grant
-step after the separate policy-indexing lifecycle when bootstrapping a fresh
-environment.
+checkpoint DML, and narrowly scoped policy-vector DML needed by the later
+indexing job. It removes database/schema default privileges and grants no
+access to `openweight_admin`, role administration, schema creation, truncation,
+or ownership. Role creation/password rotation remains an explicitly authorized
+migration operation; the API and indexing job never use the server administrator
+login. The shared application credential's policy-table DML is the narrow
+concession needed for manual re-indexing; the public API exposes no arbitrary
+SQL or indexing route.
 
 ## Remaining security work
 

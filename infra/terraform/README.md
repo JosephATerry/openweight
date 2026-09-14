@@ -11,8 +11,8 @@ validation.
 Terraform defines a resource group, VNet, Container Apps infrastructure subnet,
 private delegated PostgreSQL subnet and private DNS, Standard ACR, Container
 Apps Consumption environment, PostgreSQL Flexible Server, Key Vault, bounded
-Log Analytics, separate runtime/bootstrap/CI identities, narrow RBAC, optional
-GitHub OIDC federation bound to an Environment, manual bootstrap jobs, and the public
+Log Analytics, separate runtime/migration/indexing/CI identities, narrow RBAC,
+optional GitHub OIDC federation bound to an Environment, manual jobs, and the public
 HTTPS app. Federation is disabled by default until D19E/F deliberately enables
 the reviewed trust.
 
@@ -39,23 +39,39 @@ Log Analytics. Health checks never call an embedding model or GPT-OSS.
    unless deliberately enabled after its GitHub trust is ready. Foundation
    creates neither a job nor an app and does not require an image or secret
    reference.
+   Initial creation explicitly sets
+   `postgresql_administrator_password_required=true` while supplying the
+   sensitive ephemeral password. Later refreshes and stages leave the flag
+   false and the nullable password unset; AzureRM receives no replacement value
+   and does not rotate the write-only credential.
 2. The protected Azure workflow can be manually dispatched in `build_only`
-   mode. It builds the production image, pushes it to ACR, resolves the digest,
-   and does not change a Container App.
+   mode only after the separate `AZURE_BUILD_ENABLED=true` gate is deliberately
+   configured. It builds a Linux/amd64 migration image with
+   `OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`, pushes a source-SHA tag, resolves
+   the digest, and cannot apply Terraform, start a job, or change a database or
+   Container App.
 3. Authorized operations create three separate Key Vault secrets: database
    administrator bootstrap password, runtime database password, and the Azure
    inference-only HF token. Terraform never manages their values.
-4. `bootstrap` creates two manual Container Apps Jobs using that immutable
-   image. Terraform never starts them. An operator starts the migration job,
-   verifies success, then starts the policy-index job and verifies success.
-5. `application` removes the temporary jobs/bootstrap identity and creates the
+4. `migration` creates only the manual database migration job and its dedicated
+   identity. Terraform never starts it. The identity can pull the immutable
+   migration image and read only the administrator and application database
+   secrets.
+5. A separately reviewed `indexing` stage creates only the later policy-index
+   job and its distinct identity. That identity receives the application
+   database secret, never the administrator secret. A separate model-enabled
+   immutable image is required for that later operation.
+6. `application` removes the temporary jobs and identities and creates the
    digest-pinned app only after database and policy readiness are proven.
-6. Steady-state `main` pushes deploy through CI and the independent Azure CD
+7. Steady-state `main` pushes deploy through CI and the independent Azure CD
    workflow. Infrastructure changes remain reviewed Terraform operations.
 
-For a later schema release, the reviewed `maintenance` stage adds the manual
-jobs and temporary bootstrap identity without removing the running app. After
-the additive job is verified, return to `application` to remove that access.
+For a later schema release, `maintenance_migration` retains the running app and
+adds only the migration identity/job. `maintenance_indexing` likewise adds only
+the policy-index identity/job. There is no combined maintenance stage that
+silently enables both privileged paths. Use the narrower `migration` or
+`indexing` stage during initial setup; after a manual operation is verified,
+return to `application` to remove that access.
 
 Never jump directly from `foundation` to `application`. Never run migration as
 an app entrypoint, startup hook, Terraform provisioner, or ordinary release
@@ -69,24 +85,37 @@ disabled, PostgreSQL 17, seven-day backup, no HA, no geo-redundant backup,
 private connectivity, and TLS 1.2 or newer. Terraform allowlists `vector` with
 `azure.extensions`.
 
-The manual `migrate` job runs `scripts/migrate_database.py --seed-demo-data`.
-It serializes executions with a PostgreSQL advisory lock and records migration
+The private, no-ingress manual `migrate` job runs
+`scripts/migrate_database.py --seed-demo-data` inside the VNet-integrated
+Container Apps environment with `verify-full` TLS. It uses versionless Key
+Vault references; only secret URIs enter Terraform. The script serializes
+executions with a PostgreSQL advisory lock and records migration
 version 1. The additive migration:
 
 - runs `CREATE EXTENSION IF NOT EXISTS vector`;
 - creates the operations, security, approval-session, execution-ledger,
   LangGraph checkpoint, and pgvector policy structures;
 - creates/rotates the runtime login from a Key Vault-provided password;
-- grants only read access to demo records and policy evidence, column-scoped
-  update access to request status, and the required checkpoint/approval ledger
-  DML privileges;
+- grants only read access to demo records, column-scoped update access to
+  request status, policy-table DML needed by the later indexing job, and the
+  required checkpoint/approval ledger DML privileges;
 - optionally loads only the repository's fictional operations records.
 
-The separate `policy-index` job is the only bootstrap step that runs Qwen CPU
-embeddings. Its model is preloaded into the immutable image; it is never a
+It then validates the extension and harmless 1,024-dimensional vector behavior,
+migration uniqueness, schemas, tables, constraints, role attributes, exact
+grants, and fictional row counts (6 employees, 4 contractors, 6 requests).
+Output distinguishes an applied migration from an already-current migration and
+redacts driver exceptions that could contain a DSN.
+
+The separate `policy-index` job is the only later lifecycle step that runs Qwen
+CPU embeddings. Its model is preloaded into the immutable image; it is never a
 health check or normal deployment side effect. `/readyz` verifies the database,
 checkpoint structures, vector extension, policy table, nonempty policy index,
 and HF credential configuration without invoking either model.
+
+The current small portfolio corpus deliberately uses exact pgvector scanning;
+no HNSW or IVFFlat index is created. Introduce ANN only after corpus growth or
+measured retrieval latency justifies a separately reviewed index migration.
 
 ## Secret boundary
 
@@ -95,7 +124,8 @@ Terraform, tfvars, state, image layers, workflows, the frontend, and logs. The
 three versionless URI variables point to secrets created out of band. Terraform
 scopes `Key Vault Secrets User` to individual secret ARM resources:
 
-- the short-lived bootstrap identity can read the two database secrets;
+- the short-lived migration identity can read the two database secrets;
+- the separate indexing identity can read only the application database secret;
 - the runtime identity can read the runtime database password and Azure HF
   inference token, but not the database administrator password;
 - the CI identity cannot read any Key Vault secret.
@@ -103,6 +133,21 @@ scopes `Key Vault Secrets User` to individual secret ARM resources:
 The Azure HF token should be an inference-only token from the same HF account as
 the Space token, but it is a different token for independent revocation. The
 Hugging Face Space secret and deployment workflow are unchanged and independent.
+
+If image build/push, ACR pull, identity, Key Vault reference, private DNS, TLS,
+or authentication validation fails, do not start or automatically retry the
+job. Preserve both secrets, inspect metadata-only status, and correct only the
+failed layer before a new reviewed manual execution. A failed additive migration
+retains its advisory/ledger state: version 1 is recorded only after schema work
+succeeds, so an explicitly authorized rerun can complete it. A postcondition
+failure blocks indexing and application deployment; it never enables public
+PostgreSQL access or triggers destructive rollback SQL.
+
+Because AzureRM 5.3.0 has shown an intermittent provider startup failure, every
+future Terraform plan/apply begins with clean Git/state checks, a private
+writable temporary `AZURE_CONFIG_DIR`, cleared Terraform debug/stale `TF_VAR_*`
+variables, and one bounded `terraform providers schema -json` preflight. Require
+exit code zero and a valid AzureRM schema; do not retry automatically on failure.
 
 ## Recruiter-facing security posture
 

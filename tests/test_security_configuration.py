@@ -85,7 +85,7 @@ def test_terraform_separates_runtime_and_ci_identity_permissions() -> None:
     assert 'resource "azurerm_user_assigned_identity" "runtime"' in identities
     assert 'resource "azurerm_user_assigned_identity" "ci"' in identities
     assert 'role_definition_name = "AcrPull"' in identities
-    assert 'role_definition_name = "Key Vault Secrets User"' in identities
+    assert "role_definition_id = local.key_vault_secrets_user_role_definition_id" in identities
     assert 'role_definition_name = "AcrPush"' in identities
     assert 'role_definition_name = "Container Apps Contributor"' in identities
     runtime_blocks = re.findall(

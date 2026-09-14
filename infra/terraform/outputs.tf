@@ -59,11 +59,11 @@ output "ci_identity_principal_id" {
 }
 
 output "database_migration_job_name" {
-  description = "Manual migration job name during the bootstrap stage."
+  description = "Manual database migration job name during the migration stage."
   value       = local.migration_job_name
 }
 
 output "policy_index_job_name" {
-  description = "Manual policy indexing job name during the bootstrap stage."
+  description = "Manual policy indexing job name during the separate indexing stage."
   value       = local.policy_index_job_name
 }

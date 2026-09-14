@@ -337,6 +337,38 @@ def grant_runtime_database_role(
     role = sql.Identifier(runtime_role)
     database = sql.Identifier(config.database)
     statements = (
+        sql.SQL("REVOKE CONNECT, TEMPORARY ON DATABASE {} FROM PUBLIC").format(
+            database
+        ),
+        sql.SQL("REVOKE ALL PRIVILEGES ON DATABASE {} FROM {}").format(
+            database, role
+        ),
+        sql.SQL("REVOKE CREATE ON SCHEMA public FROM PUBLIC"),
+        sql.SQL("REVOKE ALL PRIVILEGES ON SCHEMA openweight_admin FROM PUBLIC"),
+        sql.SQL(
+            "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "
+            "openweight_admin FROM PUBLIC"
+        ),
+        sql.SQL(
+            "REVOKE ALL PRIVILEGES ON SCHEMA "
+            "openweight_admin, operations, security, public FROM {}"
+        ).format(role),
+        sql.SQL(
+            "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "
+            "openweight_admin, operations, security, public FROM {}"
+        ).format(role),
+        sql.SQL(
+            "REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "
+            "openweight_admin, operations, security, public FROM {}"
+        ).format(role),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM PUBLIC"),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON SEQUENCES FROM PUBLIC"),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON FUNCTIONS FROM PUBLIC"),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON TYPES FROM PUBLIC"),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM {}").format(role),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON SEQUENCES FROM {}").format(role),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON FUNCTIONS FROM {}").format(role),
+        sql.SQL("ALTER DEFAULT PRIVILEGES REVOKE ALL ON TYPES FROM {}").format(role),
         sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(database, role),
         sql.SQL("GRANT USAGE ON SCHEMA operations, security, public TO {}").format(role),
         sql.SQL(
@@ -380,7 +412,10 @@ def grant_runtime_database_role(
             )
             if cursor.fetchone() == (True,):
                 cursor.execute(
-                    sql.SQL("GRANT SELECT ON public.policy_chunks TO {}").format(role)
+                    sql.SQL(
+                        "GRANT SELECT, INSERT, UPDATE, DELETE ON "
+                        "public.policy_chunks TO {}"
+                    ).format(role)
                 )
 
 
@@ -404,9 +439,17 @@ def ensure_runtime_database_role(
             )
             row = cursor.fetchone()
             if row != (True,):
-                cursor.execute(sql.SQL("CREATE ROLE {} LOGIN").format(role))
+                cursor.execute(
+                    sql.SQL(
+                        "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+                        "NOREPLICATION NOBYPASSRLS"
+                    ).format(role)
+                )
             cursor.execute(
-                sql.SQL("ALTER ROLE {} LOGIN PASSWORD %s").format(role),
+                sql.SQL(
+                    "ALTER ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+                    "NOREPLICATION NOBYPASSRLS PASSWORD %s"
+                ).format(role),
                 (runtime_password,),
             )
 

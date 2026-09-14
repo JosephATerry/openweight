@@ -12,10 +12,19 @@ resource "azurerm_user_assigned_identity" "ci" {
   tags                = local.common_tags
 }
 
-resource "azurerm_user_assigned_identity" "bootstrap" {
-  count = local.bootstrap_enabled ? 1 : 0
+resource "azurerm_user_assigned_identity" "migration" {
+  count = local.migration_enabled ? 1 : 0
 
-  name                = local.bootstrap_identity_name
+  name                = local.migration_identity_name
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  tags                = local.common_tags
+}
+
+resource "azurerm_user_assigned_identity" "policy_index" {
+  count = local.policy_index_enabled ? 1 : 0
+
+  name                = local.policy_index_identity_name
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   tags                = local.common_tags
@@ -65,32 +74,52 @@ resource "azurerm_role_assignment" "runtime_key_vault_secrets" {
     ) : (
     "${azurerm_key_vault.main.id}/secrets/${coalesce(local.huggingface_token_secret_name, "not-configured")}"
   )
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = azurerm_user_assigned_identity.runtime.principal_id
-  principal_type       = "ServicePrincipal"
-  description          = "Allow the API runtime identity to read only one referenced runtime secret."
+  role_definition_id = local.key_vault_secrets_user_role_definition_id
+  principal_id       = azurerm_user_assigned_identity.runtime.principal_id
+  principal_type     = "ServicePrincipal"
+  description        = "Allow the API runtime identity to read only one referenced runtime secret."
 }
 
-resource "azurerm_role_assignment" "bootstrap_acr_pull" {
-  count = local.bootstrap_enabled ? 1 : 0
+resource "azurerm_role_assignment" "migration_acr_pull" {
+  count = local.migration_enabled ? 1 : 0
 
   scope                = azurerm_container_registry.main.id
   role_definition_name = "AcrPull"
-  principal_id         = azurerm_user_assigned_identity.bootstrap[0].principal_id
+  principal_id         = azurerm_user_assigned_identity.migration[0].principal_id
   principal_type       = "ServicePrincipal"
-  description          = "Allow the temporary database bootstrap identity to pull its immutable image."
+  description          = "Allow only the database migration identity to pull its immutable image."
 }
 
-resource "azurerm_role_assignment" "bootstrap_key_vault_secrets" {
-  count = local.bootstrap_enabled ? 2 : 0
+resource "azurerm_role_assignment" "migration_key_vault_secrets" {
+  count = local.migration_enabled ? 2 : 0
 
   scope = count.index == 0 ? (
     "${azurerm_key_vault.main.id}/secrets/${coalesce(local.postgresql_administrator_secret_name, "not-configured")}"
     ) : (
     "${azurerm_key_vault.main.id}/secrets/${coalesce(local.postgresql_application_secret_name, "not-configured")}"
   )
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = azurerm_user_assigned_identity.bootstrap[0].principal_id
+  role_definition_id = local.key_vault_secrets_user_role_definition_id
+  principal_id       = azurerm_user_assigned_identity.migration[0].principal_id
+  principal_type     = "ServicePrincipal"
+  description        = "Allow the migration identity to read exactly one required database secret."
+}
+
+resource "azurerm_role_assignment" "policy_index_acr_pull" {
+  count = local.policy_index_enabled ? 1 : 0
+
+  scope                = azurerm_container_registry.main.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.policy_index[0].principal_id
   principal_type       = "ServicePrincipal"
-  description          = "Allow the temporary bootstrap identity to read one database bootstrap secret."
+  description          = "Allow only the policy indexing identity to pull its immutable image."
+}
+
+resource "azurerm_role_assignment" "policy_index_key_vault_secret" {
+  count = local.policy_index_enabled ? 1 : 0
+
+  scope              = "${azurerm_key_vault.main.id}/secrets/${coalesce(local.postgresql_application_secret_name, "not-configured")}"
+  role_definition_id = local.key_vault_secrets_user_role_definition_id
+  principal_id       = azurerm_user_assigned_identity.policy_index[0].principal_id
+  principal_type     = "ServicePrincipal"
+  description        = "Allow the policy indexing identity to read only the application database secret."
 }

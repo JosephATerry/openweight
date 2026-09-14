@@ -60,6 +60,6 @@ resource "azurerm_postgresql_flexible_server_database" "application" {
   }
 }
 
-# The bootstrap-stage manual jobs explicitly create vector, schemas, the runtime
+# The migration-stage manual job explicitly creates vector, schemas, the runtime
 # role/grants, checkpoints, and fictional portfolio records. Policy indexing is
-# a separate manual job. Terraform never executes either job during apply.
+# a later, separately privileged manual job. Terraform never executes either job.

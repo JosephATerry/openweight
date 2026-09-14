@@ -11,7 +11,7 @@ name: Deploy Azure Container App
   workflow_dispatch:
     inputs:
       build_only:
-        description: Build and push the bootstrap image without updating the app
+        description: Build and push a model-free migration image without deploying or starting it
         required: true
         default: false
         type: boolean
@@ -28,12 +28,13 @@ jobs:
   deploy:
     name: Publish immutable image and deploy current main
     if: >-
-      vars.AZURE_DEPLOY_ENABLED == 'true' &&
-      ((github.event_name == 'workflow_dispatch' && inputs.build_only) ||
-      (github.event.workflow_run.conclusion == 'success' &&
+      (github.event_name == 'workflow_dispatch' && inputs.build_only &&
+      vars.AZURE_BUILD_ENABLED == 'true') ||
+      (vars.AZURE_DEPLOY_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository))
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:
@@ -82,10 +83,15 @@ jobs:
         run: |
           login_server="$(az acr show --name "$AZURE_CONTAINER_REGISTRY" --resource-group "$AZURE_RESOURCE_GROUP" --query loginServer --output tsv)"
           image_tag="${login_server}/${IMAGE_REPOSITORY}:${SOURCE_SHA}"
+          preload_demo_embeddings=true
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.build_only }}" == "true" ]]; then
+            preload_demo_embeddings=false
+          fi
           az acr login --name "$AZURE_CONTAINER_REGISTRY" --only-show-errors
           docker build \
+            --platform linux/amd64 \
             --build-arg VITE_DEMO_MODE=true \
-            --build-arg OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=true \
+            --build-arg "OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=${preload_demo_embeddings}" \
             --build-arg "OPENWEIGHT_BUILD_SHA=${SOURCE_SHA}" \
             --label "org.opencontainers.image.revision=${SOURCE_SHA}" \
             --tag "$image_tag" \
@@ -96,11 +102,11 @@ jobs:
           immutable_image="${login_server}/${IMAGE_REPOSITORY}@${digest}"
           echo "immutable_image=$immutable_image" >> "$GITHUB_OUTPUT"
 
-      - name: Stop after bootstrap image publication
+      - name: Stop after migration image publication
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_only }}
         run: |
-          echo "## Azure bootstrap image" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image pushed by immutable digest; no Container App revision was changed." >> "$GITHUB_STEP_SUMMARY"
+          echo "## Azure model-free migration image" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image pushed by immutable digest without model preload; no Terraform, job, database, or Container App action occurred." >> "$GITHUB_STEP_SUMMARY"
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.image.outputs.immutable_image }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
