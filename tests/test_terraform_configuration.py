@@ -206,6 +206,19 @@ def test_example_tfvars_contains_no_secret_value() -> None:
     assert "example.invalid" in example
 
 
+def test_central_us_recovery_inputs_and_global_names_are_region_specific() -> None:
+    example = _read("terraform.tfvars.example")
+    locals_tf = _read("locals.tf")
+
+    assert 'location      = "centralus"' in example
+    assert 'region_code   = "cus"' in example
+    assert "${var.region_code}${var.unique_suffix}" in locals_tf
+    assert '"kv-${var.unique_suffix}-${var.region_code}-' in locals_tf
+    assert '"psql-${var.unique_suffix}-${var.region_code}-' in locals_tf
+    assert "acrowpdemocusreplace123.azurecr.io" in example
+    assert "https://kv-replace123-cus-owp.vault.azure.net/secrets/" in example
+
+
 def test_documentation_preserves_d12_and_d14_boundaries() -> None:
     readme = " ".join(_read("README.md").split())
     required_phrases = (

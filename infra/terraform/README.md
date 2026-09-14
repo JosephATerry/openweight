@@ -141,6 +141,16 @@ and time-dependent. Review the portal cost estimate and the existing $70 budget
 alerts before every apply. Spending protection remains enabled; this design does
 not require conversion to Pay-As-You-Go.
 
+## Active deployment region
+
+The reviewed recovery target is Central US: use `location = "centralus"` and
+`region_code = "cus"`. Globally scoped ACR, Key Vault, and PostgreSQL names
+include that region code, so a Central US deployment does not depend on reusing
+an East US name after cleanup or on purging a soft-deleted Key Vault. For the
+established `jat060015f` suffix, the foundation names are
+`acrowpdemocusjat060015f`, `kv-jat060015f-cus-owp`, and
+`psql-jat060015f-cus-owp-demo`.
+
 ## Remote state
 
 [`state-bootstrap/README.md`](state-bootstrap/README.md) defines the separate

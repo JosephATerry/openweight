@@ -1,14 +1,14 @@
 # Illustrative, non-secret values only. Select a real location and replace every
 # placeholder before a future reviewed plan. This file is not deployment auth.
-location      = "eastus"
-region_code   = "eus"
+location      = "centralus"
+region_code   = "cus"
 environment   = "demo"
 project_name  = "owp"
 unique_suffix = "replace123"
 deployment_stage = "foundation"
 
 # Set only after the foundation exists and Azure CD has pushed the image.
-container_image = "acrowpdemoreplace123.azurecr.io/openweight-platform-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+container_image = "acrowpdemocusreplace123.azurecr.io/openweight-platform-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
 # Empty means public managed HTTPS for the recruiter portfolio. Supplying
 # restricted CIDRs switches to a private-audience posture.
@@ -27,9 +27,9 @@ github_environment        = "azure-production"
 
 # Authorized operations create these secrets between the foundation and
 # bootstrap stages. These are references only; values never belong in tfvars.
-postgresql_administrator_password_secret_id = "https://kv-replace123-owp-demo.vault.azure.net/secrets/postgres-admin-password"
-postgresql_application_password_secret_id = "https://kv-replace123-owp-demo.vault.azure.net/secrets/postgres-application-password"
-huggingface_token_secret_id               = "https://kv-replace123-owp-demo.vault.azure.net/secrets/huggingface-inference-token"
+postgresql_administrator_password_secret_id = "https://kv-replace123-cus-owp.vault.azure.net/secrets/postgres-admin-password"
+postgresql_application_password_secret_id = "https://kv-replace123-cus-owp.vault.azure.net/secrets/postgres-application-password"
+huggingface_token_secret_id               = "https://kv-replace123-cus-owp.vault.azure.net/secrets/huggingface-inference-token"
 
 # Deliberately omitted: postgresql_administrator_password. Supply that ephemeral
 # bootstrap value out of band (for example TF_VAR_postgresql_administrator_password)

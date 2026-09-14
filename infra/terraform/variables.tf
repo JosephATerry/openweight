@@ -4,7 +4,7 @@ variable "location" {
 
   validation {
     condition     = can(regex("^[a-z0-9]+$", var.location))
-    error_message = "location must be a lowercase Azure location identifier such as eastus."
+    error_message = "location must be a lowercase Azure location identifier such as centralus."
   }
 }
 
