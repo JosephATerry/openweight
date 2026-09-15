@@ -45,6 +45,10 @@ def job_run_commands(job: dict[str, object]) -> str:
     return "\n".join(step["run"] for step in job["steps"] if "run" in step)
 
 
+def normalized_expression(value: object) -> str:
+    return " ".join(str(value).split())
+
+
 def test_ci_has_expected_triggers_and_least_privilege() -> None:
     configuration = workflow()
 
@@ -308,7 +312,9 @@ def test_azure_deployment_is_ci_gated_current_main_and_serialized() -> None:
         "types": ["completed"],
         "branches": ["main"],
     }
-    assert "vars.AZURE_DEPLOY_ENABLED == 'true'" in condition
+    assert "github.event_name == 'workflow_run'" in condition
+    assert "AZURE_DEPLOY_ENABLED" not in condition
+    assert "AZURE_BUILD_ENABLED" not in condition
     assert "conclusion == 'success'" in condition
     assert "event == 'push'" in condition
     assert "head_repository.full_name == github.repository" in condition
@@ -326,13 +332,28 @@ def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
     deploy = configuration["jobs"]["deploy"]
     condition = deploy["if"]
     source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+    authorization = deploy["steps"][0]
+    commands = authorization["run"]
 
-    assert "vars.AZURE_DEPLOY_ENABLED == 'true'" in condition
+    assert authorization["id"] == "authorization"
+    assert authorization["name"] == "Authorize the requested Azure operation"
+    assert authorization["env"] == {
+        "AUTH_ONLY_REQUESTED": "${{ inputs.auth_only }}",
+        "BUILD_ONLY_REQUESTED": "${{ inputs.build_only }}",
+        "AZURE_BUILD_ENABLED": "${{ vars.AZURE_BUILD_ENABLED }}",
+        "AZURE_DEPLOY_ENABLED": "${{ vars.AZURE_DEPLOY_ENABLED }}",
+    }
+    assert "AZURE_DEPLOY_ENABLED" not in condition
+    assert "AZURE_BUILD_ENABLED" not in condition
     assert "workflow_dispatch' && inputs.build_only" in condition
-    assert "vars.AZURE_BUILD_ENABLED == 'true'" in condition
-    assert "AZURE_DEPLOY_ENABLED: ${{ vars.AZURE_DEPLOY_ENABLED }}" not in source
+    assert 'authorized=false' in commands
+    assert '"$AZURE_BUILD_ENABLED" == "true"' in commands
+    assert '"$AZURE_DEPLOY_ENABLED" == "true"' in commands
+    assert commands.count("authorized=true") == 2
+    assert 'echo "authorized=$authorized" >> "$GITHUB_OUTPUT"' in commands
+    assert "authorization gate: CLOSED" in commands
     assert "secrets.AZURE_DEPLOY_ENABLED" not in source
-    assert "vars.AZURE_DEPLOY_ENABLED" not in all_run_commands(configuration)
+    assert "secrets.AZURE_BUILD_ENABLED" not in source
 
 
 def test_azure_auth_only_job_is_manual_isolated_and_least_privilege() -> None:
@@ -360,8 +381,8 @@ def test_azure_auth_only_job_is_manual_isolated_and_least_privilege() -> None:
         "!inputs.build_only"
     )
     assert "inputs.build_only && !inputs.auth_only" in deploy_condition
-    assert "vars.AZURE_BUILD_ENABLED == 'true'" in deploy_condition
-    assert "vars.AZURE_DEPLOY_ENABLED == 'true'" in deploy_condition
+    assert "AZURE_BUILD_ENABLED" not in deploy_condition
+    assert "AZURE_DEPLOY_ENABLED" not in deploy_condition
     assert "AZURE_BUILD_ENABLED" not in auth_condition
     assert "AZURE_DEPLOY_ENABLED" not in auth_condition
     assert "needs" not in auth
@@ -456,14 +477,28 @@ def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> 
     source = read(AZURE_DEPLOY_WORKFLOW_PATH)
     commands = all_run_commands(configuration)
     normalized_condition = " ".join(condition.split())
+    authorization = deploy["steps"][0]
+    authorization_commands = authorization["run"]
+    release = next(
+        step
+        for step in deploy["steps"]
+        if step["name"] == "Deploy one digest-pinned Container App revision"
+    )
 
     assert (
         "github.event_name == 'workflow_dispatch' && inputs.build_only && "
-        "!inputs.auth_only && "
-        "vars.AZURE_BUILD_ENABLED == 'true'"
+        "!inputs.auth_only"
     ) in normalized_condition
+    assert "AZURE_BUILD_ENABLED" not in normalized_condition
     assert "secrets.AZURE_BUILD_ENABLED" not in source
-    assert "vars.AZURE_BUILD_ENABLED" not in commands
+    assert authorization["env"]["AZURE_BUILD_ENABLED"] == (
+        "${{ vars.AZURE_BUILD_ENABLED }}"
+    )
+    assert '"$AZURE_BUILD_ENABLED" == "true"' in authorization_commands
+    assert "github.event_name == 'workflow_run'" in normalized_expression(
+        release["if"]
+    )
+    assert "workflow_dispatch" not in normalized_expression(release["if"])
     assert "preload_demo_embeddings=false" in commands
     assert '--platform linux/amd64' in commands
     assert "IMAGE_REPOSITORY}:${SOURCE_SHA}" in commands
@@ -472,6 +507,55 @@ def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> 
     assert "terraform apply" not in commands
     assert "containerapp job start" not in commands
     assert "keyvault secret" not in commands
+
+
+def test_azure_environment_gate_is_first_and_guards_every_later_step() -> None:
+    deploy = azure_deploy_workflow()["jobs"]["deploy"]
+    steps = deploy["steps"]
+    authorization = steps[0]
+    protected_condition = "steps.authorization.outputs.authorized == 'true'"
+
+    assert authorization["id"] == "authorization"
+    assert "uses" not in authorization
+    assert steps[1]["name"] == "Check out the CI-validated revision"
+    for step in steps[1:]:
+        assert protected_condition in normalized_expression(step.get("if"))
+        assert "vars.AZURE_BUILD_ENABLED" not in json.dumps(step)
+        assert "vars.AZURE_DEPLOY_ENABLED" not in json.dumps(step)
+
+    step_names = [step["name"] for step in steps]
+    assert step_names.index("Authorize the requested Azure operation") < step_names.index(
+        "Authenticate to Azure with GitHub OIDC"
+    )
+    assert step_names.index("Authorize the requested Azure operation") < step_names.index(
+        "Build and push the production image"
+    )
+    assert step_names.index("Authorize the requested Azure operation") < step_names.index(
+        "Deploy one digest-pinned Container App revision"
+    )
+
+
+def test_azure_pre_runner_conditions_use_only_event_input_and_trust_contexts() -> None:
+    configuration = azure_deploy_workflow()
+    deploy_condition = normalized_expression(configuration["jobs"]["deploy"]["if"])
+    auth_condition = normalized_expression(
+        configuration["jobs"]["azure-auth-smoke"]["if"]
+    )
+
+    assert "vars." not in deploy_condition
+    assert "secrets." not in deploy_condition
+    assert "github.event_name == 'workflow_dispatch'" in deploy_condition
+    assert "inputs.build_only && !inputs.auth_only" in deploy_condition
+    assert "github.event_name == 'workflow_run'" in deploy_condition
+    assert "conclusion == 'success'" in deploy_condition
+    assert "event == 'push'" in deploy_condition
+    assert "head_branch == 'main'" in deploy_condition
+    assert "head_repository.full_name == github.repository" in deploy_condition
+    assert auth_condition == (
+        "github.event_name == 'workflow_dispatch' && inputs.auth_only && "
+        "!inputs.build_only"
+    )
+    assert "pull_request" not in configuration["on"]
 
 
 def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:

@@ -145,12 +145,14 @@ the Space's existing `HF_TOKEN` and account settings.
 ## Independent Azure deployment
 
 `.github/workflows/deploy-azure.yml` is a second, independent CD target. Its
-deploy job is disabled unless the repository-level, non-secret variable
-`AZURE_DEPLOY_ENABLED` is exactly `true`. An absent or differently valued gate
-skips the job before Azure login, so merging D19D does not require or create the
-`azure-production` Environment and does not produce a failed deployment check.
-Only set the gate after the environment, federation, variables, and foundation
-have been deliberately bootstrapped.
+deployment gate is the environment-level, non-secret variable
+`AZURE_DEPLOY_ENABLED`. GitHub exposes environment variables only after an
+environment-bound job starts, so job eligibility uses only the trusted event
+and repository context. The job's first step then requires the gate to be
+exactly `true`; an absent or differently valued gate records a closed gate and
+all checkout, Azure login, build, push, and deployment steps remain skipped.
+Only enable the gate after the environment, federation, variables, and
+foundation have been deliberately bootstrapped.
 
 Once enabled, a successful push-triggered `CI` run on canonical `main` starts
 the job; it rejects fork/PR workflow runs and rechecks that the tested SHA is
@@ -178,9 +180,11 @@ a model request. The summary records the previous ready revision so rollback is
 a deliberate reviewed revision activation, not an automatic hidden mutation.
 
 A manual `build_only` dispatch exists for the model-free migration image. It is
-disabled until the separate non-secret `AZURE_BUILD_ENABLED` variable is
-exactly `true`; `AZURE_DEPLOY_ENABLED` remains an independent gate for normal
-CI-driven releases. Build-only forces
+disabled until the separate environment-level, non-secret
+`AZURE_BUILD_ENABLED` variable is exactly `true`; `AZURE_DEPLOY_ENABLED`
+remains an independent gate for normal CI-driven releases. Manual event/input
+eligibility starts the protected job, whose first step checks the build gate
+before checkout or Azure login. Build-only forces
 `OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`, targets Linux/amd64, pushes the
 source-SHA tag, records its immutable ACR digest, and then stops. It cannot
 apply Terraform, start a Container Apps Job, change the database, deploy an

@@ -133,13 +133,14 @@ The application backend then uses OIDC/Entra authentication and blob locking.
 ## CI/CD trust and release
 
 `.github/workflows/deploy-azure.yml` is independent from Hugging Face CD. Its
-job is safely skipped until the repository-level non-secret variable
-`AZURE_DEPLOY_ENABLED` is exactly `true`. This gate remains absent through the
-D19D merge and is set only after the GitHub Environment, federation, variables,
-and Azure foundation are ready. Once enabled, a successful push-triggered CI
-run for canonical `main` starts the job. The workflow rechecks that the tested
-SHA is still current main before requesting an OIDC token. The federated
-subject is exactly:
+deployment gate is the `azure-production` environment variable
+`AZURE_DEPLOY_ENABLED`. Environment variables are available only after the
+protected job starts, so pre-runner eligibility uses the successful canonical
+`main` CI event and repository trust context. The first in-job step requires
+the gate to be exactly `true`; otherwise every checkout, Azure login, build,
+push, and deployment step is skipped. Once authorized, the workflow rechecks
+that the tested SHA is still current main before requesting an OIDC token. The
+federated subject is exactly:
 
 ```text
 repo:JosephATerry@204825811/openweight@1363713223:environment:azure-production
@@ -165,9 +166,11 @@ written to the job summary. It never automatically calls HF/Groq or rolls back.
 
 The manual `build_only` dispatch exists solely to break the first-deploy
 ordering. It requires the separate `AZURE_BUILD_ENABLED=true` gate and forces
-`OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`; it cannot deploy the app, apply
-Terraform, start a job, or modify the database. Normal deployments still
-require `AZURE_DEPLOY_ENABLED=true` and successful CI.
+`OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`. Manual event/input eligibility
+starts the environment-bound job, then its first step checks the environment
+gate before checkout or Azure login. It cannot deploy the app, apply Terraform,
+start a job, or modify the database. Normal deployments still require
+`AZURE_DEPLOY_ENABLED=true` and successful CI.
 The Hugging Face Space workflow, Trusted Publisher, runtime secret, profile,
 portable state, and public URL remain separate and unchanged.
 
