@@ -155,40 +155,111 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Verify the narrowly configured Azure targets
+        id: targets
         if: ${{ steps.authorization.outputs.authorized == 'true' }}
         run: |
+          set -euo pipefail
           test -n "$AZURE_RESOURCE_GROUP"
           test -n "$AZURE_CONTAINER_REGISTRY"
           test -n "$AZURE_CONTAINER_APP"
-          az acr show --name "$AZURE_CONTAINER_REGISTRY" --resource-group "$AZURE_RESOURCE_GROUP" --only-show-errors --output none
+          [[ "$AZURE_CONTAINER_REGISTRY" =~ ^[a-z0-9]{5,50}$ ]]
+          acr_login_suffix="$(az cloud show --query suffixes.acrLoginServerEndpoint --output tsv)"
+          test "$acr_login_suffix" = ".azurecr.io"
+          login_server="${AZURE_CONTAINER_REGISTRY}${acr_login_suffix}"
+          echo "login_server=$login_server" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ inputs.build_only }}" != "true" ]]; then
             az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --only-show-errors --output none
           fi
 
+      - name: Authenticate Docker directly to the ACR data plane
+        id: registry-auth
+        if: ${{ steps.authorization.outputs.authorized == 'true' }}
+        env:
+          ACR_LOGIN_SERVER: ${{ steps.targets.outputs.login_server }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          DOCKER_CONFIG: ${{ runner.temp }}/openweight-docker-config
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+
+          token_response="$(mktemp "${RUNNER_TEMP}/openweight-acr-token.XXXXXX.json")"
+          trap 'rm -f "$token_response"' EXIT
+          mkdir -p "$DOCKER_CONFIG"
+          chmod 0700 "$DOCKER_CONFIG"
+
+          az account get-access-token \
+            --resource https://containerregistry.azure.net \
+            --query accessToken \
+            --output tsv \
+            --only-show-errors |
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --proto '=https' \
+            --request POST \
+            --url "https://${ACR_LOGIN_SERVER}/oauth2/exchange" \
+            --data-urlencode "grant_type=access_token" \
+            --data-urlencode "service=${ACR_LOGIN_SERVER}" \
+            --data-urlencode "tenant=${AZURE_TENANT_ID}" \
+            --data-urlencode "access_token@-" \
+            --output "$token_response"
+
+          jq -er \
+            '.refresh_token | select(type == "string" and length > 0)' \
+            "$token_response" |
+          docker login "$ACR_LOGIN_SERVER" \
+            --username 00000000-0000-0000-0000-000000000000 \
+            --password-stdin
+          rm -f "$token_response"
+          echo "ACR data-plane authentication: PASS"
+
       - name: Build and push the production image
         id: image
         if: ${{ steps.authorization.outputs.authorized == 'true' }}
+        env:
+          ACR_LOGIN_SERVER: ${{ steps.targets.outputs.login_server }}
+          DOCKER_CONFIG: ${{ runner.temp }}/openweight-docker-config
         run: |
-          login_server="$(az acr show --name "$AZURE_CONTAINER_REGISTRY" --resource-group "$AZURE_RESOURCE_GROUP" --query loginServer --output tsv)"
-          image_tag="${login_server}/${IMAGE_REPOSITORY}:${SOURCE_SHA}"
+          set -euo pipefail
+          umask 077
+          image_tag="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${SOURCE_SHA}"
           preload_demo_embeddings=true
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.build_only }}" == "true" ]]; then
             preload_demo_embeddings=false
           fi
-          az acr login --name "$AZURE_CONTAINER_REGISTRY" --only-show-errors
-          docker build \
+          metadata_file="$(mktemp "${RUNNER_TEMP}/openweight-build-metadata.XXXXXX.json")"
+          trap 'rm -f "$metadata_file"' EXIT
+          docker buildx build \
             --platform linux/amd64 \
             --build-arg VITE_DEMO_MODE=true \
             --build-arg "OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=${preload_demo_embeddings}" \
             --build-arg "OPENWEIGHT_BUILD_SHA=${SOURCE_SHA}" \
             --label "org.opencontainers.image.revision=${SOURCE_SHA}" \
             --tag "$image_tag" \
+            --push \
+            --metadata-file "$metadata_file" \
             .
-          docker push "$image_tag"
-          digest="$(az acr repository show --name "$AZURE_CONTAINER_REGISTRY" --image "${IMAGE_REPOSITORY}:${SOURCE_SHA}" --query digest --output tsv)"
-          test "${#digest}" -eq 71
-          immutable_image="${login_server}/${IMAGE_REPOSITORY}@${digest}"
+          digest="$(jq -er \
+            '.["containerimage.digest"] | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))' \
+            "$metadata_file")"
+          immutable_image="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}@${digest}"
           echo "immutable_image=$immutable_image" >> "$GITHUB_OUTPUT"
+
+      - name: Remove ephemeral registry credentials
+        if: >-
+          always() && steps.authorization.outputs.authorized == 'true' &&
+          steps.registry-auth.outcome != 'skipped'
+        env:
+          ACR_LOGIN_SERVER: ${{ steps.targets.outputs.login_server }}
+          DOCKER_CONFIG: ${{ runner.temp }}/openweight-docker-config
+        shell: bash
+        run: |
+          set +e
+          docker logout "$ACR_LOGIN_SERVER" >/dev/null 2>&1
+          rm -rf -- "$DOCKER_CONFIG"
 
       - name: Stop after migration image publication
         if: >-

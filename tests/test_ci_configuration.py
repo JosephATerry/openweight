@@ -500,13 +500,99 @@ def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> 
     )
     assert "workflow_dispatch" not in normalized_expression(release["if"])
     assert "preload_demo_embeddings=false" in commands
-    assert '--platform linux/amd64' in commands
+    assert "docker buildx build" in commands
+    assert "--platform linux/amd64" in commands
+    assert "--push" in commands
+    assert "--metadata-file" in commands
     assert "IMAGE_REPOSITORY}:${SOURCE_SHA}" in commands
     assert "@${digest}" in commands
     assert "terraform plan" not in commands
     assert "terraform apply" not in commands
     assert "containerapp job start" not in commands
     assert "keyvault secret" not in commands
+
+
+def test_azure_image_publication_uses_acr_data_plane_with_no_registry_arm_lookup() -> None:
+    deploy = azure_deploy_workflow()["jobs"]["deploy"]
+    commands = job_run_commands(deploy)
+    target_check = next(
+        step
+        for step in deploy["steps"]
+        if step["name"] == "Verify the narrowly configured Azure targets"
+    )
+    registry_auth = next(
+        step
+        for step in deploy["steps"]
+        if step["name"] == "Authenticate Docker directly to the ACR data plane"
+    )
+
+    assert target_check["id"] == "targets"
+    assert "az cloud show" in target_check["run"]
+    assert 'test "$acr_login_suffix" = ".azurecr.io"' in target_check["run"]
+    assert "az acr " not in commands
+    assert "az resource " not in commands
+    assert "Microsoft.ContainerRegistry/registries/read" not in commands
+    assert registry_auth["env"] == {
+        "ACR_LOGIN_SERVER": "${{ steps.targets.outputs.login_server }}",
+        "AZURE_TENANT_ID": "${{ vars.AZURE_TENANT_ID }}",
+        "DOCKER_CONFIG": "${{ runner.temp }}/openweight-docker-config",
+    }
+    assert "az account get-access-token" in registry_auth["run"]
+    assert "--resource https://containerregistry.azure.net" in registry_auth["run"]
+    assert 'https://${ACR_LOGIN_SERVER}/oauth2/exchange' in registry_auth["run"]
+    assert '--data-urlencode "access_token@-"' in registry_auth["run"]
+    assert "--password-stdin" in registry_auth["run"]
+    assert "00000000-0000-0000-0000-000000000000" in registry_auth["run"]
+
+
+def test_azure_registry_tokens_are_ephemeral_and_never_workflow_outputs() -> None:
+    deploy = azure_deploy_workflow()["jobs"]["deploy"]
+    source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+    registry_auth = next(
+        step
+        for step in deploy["steps"]
+        if step["name"] == "Authenticate Docker directly to the ACR data plane"
+    )
+    cleanup = next(
+        step
+        for step in deploy["steps"]
+        if step["name"] == "Remove ephemeral registry credentials"
+    )
+
+    assert "set +x" in registry_auth["run"]
+    assert "umask 077" in registry_auth["run"]
+    assert "--only-show-errors |\ncurl" in registry_auth["run"]
+    assert '"$token_response" |\ndocker login' in registry_auth["run"]
+    assert "aad_access_token=" not in source
+    assert "acr_refresh_token=" not in source
+    assert "GITHUB_OUTPUT" not in registry_auth["run"]
+    assert "secrets." not in registry_auth["run"]
+    assert "AZURE_CLIENT_SECRET" not in source
+    assert "--password " not in registry_auth["run"]
+    assert "always()" in cleanup["if"]
+    assert 'rm -rf -- "$DOCKER_CONFIG"' in cleanup["run"]
+
+
+def test_azure_digest_comes_from_the_trusted_buildx_push_result() -> None:
+    deploy = azure_deploy_workflow()["jobs"]["deploy"]
+    image = next(
+        step
+        for step in deploy["steps"]
+        if step["name"] == "Build and push the production image"
+    )
+    commands = image["run"]
+
+    assert "docker buildx build" in commands
+    assert "--push" in commands
+    assert "--metadata-file" in commands
+    assert '.["containerimage.digest"]' in commands
+    assert 'test("^sha256:[0-9a-f]{64}$")' in commands
+    assert (
+        'immutable_image="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}@${digest}"'
+        in commands
+    )
+    assert "az acr repository" not in commands
+    assert "docker push" not in commands
 
 
 def test_azure_environment_gate_is_first_and_guards_every_later_step() -> None:
@@ -577,8 +663,10 @@ def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:
     assert "${{ vars.AZURE_CLIENT_ID }}" in source
     assert "${{ secrets." not in source
     assert "AZURE_CLIENT_SECRET" not in source
-    assert "docker push" in commands
-    assert "az acr repository show" in commands
+    assert "docker buildx build" in commands
+    assert "--push" in commands
+    assert "az acr " not in commands
+    assert '.["containerimage.digest"]' in commands
     assert "@${digest}" in commands
     assert "az containerapp update" in commands
     assert "/healthz" in commands

@@ -172,12 +172,24 @@ The Environment must define non-secret variables `AZURE_CLIENT_ID`,
 `AZURE_CONTAINER_REGISTRY`, and `AZURE_CONTAINER_APP`. No Azure client secret,
 registry password, database credential, or HF token enters GitHub Actions.
 
-The workflow builds the production image, pushes a source-SHA tag, resolves the
-ACR manifest digest, and updates the single Container App to the immutable
-`repository@sha256:...` reference. It waits for the new revision, verifies the
-deployed digest, and calls only `/healthz` and `/readyz`; neither endpoint makes
-a model request. The summary records the previous ready revision so rollback is
-a deliberate reviewed revision activation, not an automatic hidden mutation.
+The workflow builds the production image, pushes a source-SHA tag, captures the
+ACR manifest digest from Buildx's trusted push metadata, and updates the single
+Container App to the immutable `repository@sha256:...` reference. It waits for
+the new revision, verifies the deployed digest, and calls only `/healthz` and
+`/readyz`; neither endpoint makes a model request. The summary records the
+previous ready revision so rollback is a deliberate reviewed revision
+activation, not an automatic hidden mutation.
+
+For registry publication, the CI identity intentionally relies only on its ACR
+data-plane role. It derives the public-cloud login server from the protected
+registry name, exchanges its short-lived Microsoft Entra token directly through
+ACR's documented OAuth endpoint, and passes the resulting ephemeral refresh
+token to Docker over standard input. It does not use `az acr show`,
+`az acr login`, or repository catalog queries, all of which introduce registry
+control-plane lookup requirements in Azure CLI. The token response and isolated
+Docker configuration are removed on the runner, and no registry password,
+admin user, client secret, or token enters repository configuration or workflow
+output.
 
 A manual `build_only` dispatch exists for the model-free migration image. It is
 disabled until the separate environment-level, non-secret
