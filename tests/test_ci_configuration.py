@@ -41,6 +41,10 @@ def all_run_commands(configuration: dict[str, object]) -> str:
     )
 
 
+def job_run_commands(job: dict[str, object]) -> str:
+    return "\n".join(step["run"] for step in job["steps"] if "run" in step)
+
+
 def test_ci_has_expected_triggers_and_least_privilege() -> None:
     configuration = workflow()
 
@@ -331,6 +335,120 @@ def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
     assert "vars.AZURE_DEPLOY_ENABLED" not in all_run_commands(configuration)
 
 
+def test_azure_auth_only_job_is_manual_isolated_and_least_privilege() -> None:
+    configuration = azure_deploy_workflow()
+    dispatch_inputs = configuration["on"]["workflow_dispatch"]["inputs"]
+    auth = configuration["jobs"]["azure-auth-smoke"]
+    deploy = configuration["jobs"]["deploy"]
+    auth_condition = " ".join(auth["if"].split())
+    deploy_condition = " ".join(deploy["if"].split())
+
+    assert set(dispatch_inputs) == {"auth_only", "build_only"}
+    assert dispatch_inputs["auth_only"] == {
+        "description": (
+            "Verify GitHub OIDC authentication to Azure without building or "
+            "deploying"
+        ),
+        "required": True,
+        "default": False,
+        "type": "boolean",
+    }
+    assert dispatch_inputs["build_only"]["default"] is False
+    assert dispatch_inputs["build_only"]["type"] == "boolean"
+    assert auth_condition == (
+        "github.event_name == 'workflow_dispatch' && inputs.auth_only && "
+        "!inputs.build_only"
+    )
+    assert "inputs.build_only && !inputs.auth_only" in deploy_condition
+    assert "vars.AZURE_BUILD_ENABLED == 'true'" in deploy_condition
+    assert "vars.AZURE_DEPLOY_ENABLED == 'true'" in deploy_condition
+    assert "AZURE_BUILD_ENABLED" not in auth_condition
+    assert "AZURE_DEPLOY_ENABLED" not in auth_condition
+    assert "needs" not in auth
+    assert "needs" not in deploy
+    assert auth["environment"] == {"name": "azure-production"}
+    assert auth["permissions"] == {
+        "contents": "read",
+        "id-token": "write",
+    }
+    assert auth["timeout-minutes"] == 5
+
+
+def test_azure_auth_only_job_uses_oidc_and_read_only_arm_verification() -> None:
+    configuration = azure_deploy_workflow()
+    auth = configuration["jobs"]["azure-auth-smoke"]
+    source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+    commands = job_run_commands(auth)
+    action_steps = [step for step in auth["steps"] if "uses" in step]
+
+    assert len(action_steps) == 1
+    login = action_steps[0]
+    assert login["uses"] == (
+        "azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c"
+    )
+    assert login["with"] == {
+        "client-id": "${{ vars.AZURE_CLIENT_ID }}",
+        "tenant-id": "${{ vars.AZURE_TENANT_ID }}",
+        "subscription-id": "${{ vars.AZURE_SUBSCRIPTION_ID }}",
+    }
+    assert not any(
+        step.get("uses", "").startswith("actions/checkout@")
+        for step in auth["steps"]
+    )
+    assert auth["env"] == {
+        "AZURE_CORE_OUTPUT": "none",
+        "AZURE_SUBSCRIPTION_ID": "${{ vars.AZURE_SUBSCRIPTION_ID }}",
+        "AZURE_RESOURCE_GROUP": "${{ vars.AZURE_RESOURCE_GROUP }}",
+    }
+    assert "az account list --refresh" in commands
+    assert "az account show --query id --output tsv" in commands
+    assert "az account show --query user.type --output tsv" in commands
+    assert 'test "$AZURE_RESOURCE_GROUP" = "rg-owp-demo-cus"' in commands
+    assert "read-only Azure Resource Manager verification: PASS" in commands
+    assert "OIDC authentication smoke test: PASS" in commands
+    assert "${{ secrets." not in source
+    assert "AZURE_CLIENT_SECRET" not in source
+
+
+def test_azure_auth_only_job_has_no_mutation_or_application_execution_surface() -> None:
+    auth = azure_deploy_workflow()["jobs"]["azure-auth-smoke"]
+    commands = job_run_commands(auth).lower()
+    action_references = [
+        step["uses"].lower() for step in auth["steps"] if "uses" in step
+    ]
+    azure_cli_commands = re.findall(r"\baz\s+([a-z-]+\s+[a-z-]+)", commands)
+    forbidden = (
+        "docker ",
+        "buildx",
+        "az acr login",
+        "az acr build",
+        "az acr import",
+        "az acr repository delete",
+        "docker push",
+        "terraform",
+        "az containerapp",
+        "containerapp job",
+        "postgres",
+        "psql",
+        "migrate",
+        "keyvault",
+        "role assignment",
+        "az group create",
+        "az group update",
+        "az deployment",
+        "gh ",
+        "git push",
+        "curl ",
+    )
+
+    assert not any(value in commands for value in forbidden)
+    assert azure_cli_commands == ["account list", "account show", "account show"]
+    assert len(auth["steps"]) == 2
+    assert action_references == [
+        "azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c"
+    ]
+
+
 def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> None:
     configuration = azure_deploy_workflow()
     deploy = configuration["jobs"]["deploy"]
@@ -341,6 +459,7 @@ def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> 
 
     assert (
         "github.event_name == 'workflow_dispatch' && inputs.build_only && "
+        "!inputs.auth_only && "
         "vars.AZURE_BUILD_ENABLED == 'true'"
     ) in normalized_condition
     assert "secrets.AZURE_BUILD_ENABLED" not in source

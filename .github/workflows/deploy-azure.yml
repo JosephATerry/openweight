@@ -10,6 +10,11 @@ name: Deploy Azure Container App
       - main
   workflow_dispatch:
     inputs:
+      auth_only:
+        description: Verify GitHub OIDC authentication to Azure without building or deploying
+        required: true
+        default: false
+        type: boolean
       build_only:
         description: Build and push a model-free migration image without deploying or starting it
         required: true
@@ -25,10 +30,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  azure-auth-smoke:
+    name: Verify GitHub OIDC authentication only
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.auth_only &&
+      !inputs.build_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: azure-production
+    env:
+      AZURE_CORE_OUTPUT: none
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+    steps:
+      - name: Authenticate to Azure with GitHub OIDC
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify the authenticated Azure context read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$AZURE_SUBSCRIPTION_ID"
+          test "$AZURE_RESOURCE_GROUP" = "rg-owp-demo-cus"
+          available_subscription_count="$(az account list --refresh --query "[?id=='${AZURE_SUBSCRIPTION_ID}'] | length(@)" --output tsv --only-show-errors)"
+          active_subscription_id="$(az account show --query id --output tsv)"
+          principal_type="$(az account show --query user.type --output tsv)"
+          test "$available_subscription_count" = "1"
+          test "$active_subscription_id" = "$AZURE_SUBSCRIPTION_ID"
+          test "$principal_type" = "servicePrincipal"
+          echo "read-only Azure Resource Manager verification: PASS"
+          echo "subscription verification: PASS"
+          echo "configured service-principal verification: PASS"
+          echo "configured resource-group target verification: PASS"
+          echo "OIDC authentication smoke test: PASS"
+
   deploy:
     name: Publish immutable image and deploy current main
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.build_only &&
+      !inputs.auth_only &&
       vars.AZURE_BUILD_ENABLED == 'true') ||
       (vars.AZURE_DEPLOY_ENABLED == 'true' &&
       github.event.workflow_run.conclusion == 'success' &&

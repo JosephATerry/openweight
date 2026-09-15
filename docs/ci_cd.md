@@ -186,6 +186,17 @@ source-SHA tag, records its immutable ACR digest, and then stops. It cannot
 apply Terraform, start a Container Apps Job, change the database, deploy an
 application, or bypass the later reviewed lifecycle.
 
+A separate manual `auth_only` diagnostic job is bound to the same protected
+`azure-production` Environment but does not consult or change either cloud
+execution gate. It exchanges GitHub's OIDC token through the pinned Azure login
+action, verifies the configured subscription and service-principal context,
+refreshes that subscription through a read-only Azure Resource Manager query,
+and checks the expected resource-group target name. It does not require broader
+resource-group Reader access beyond the CI identity's registry-scoped role. The
+job has no checkout, image build or push, ACR operation, Terraform, deployment,
+Key Vault, or database step. Selecting both manual booleans makes both manual
+jobs ineligible; selecting neither also performs no Azure action.
+
 Database migration and policy indexing use separately privileged, manually
 triggered Container Apps Jobs and are never part of steady-state CD. Migration
 receives the two database secrets; later indexing receives only the application
