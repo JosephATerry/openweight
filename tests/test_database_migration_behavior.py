@@ -104,7 +104,9 @@ class ValidationConnection:
         return self._cursor
 
 
-def test_current_migration_records_only_after_schema_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unrecorded_ledger_only_state_resumes_role_schema_and_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     config = object()
 

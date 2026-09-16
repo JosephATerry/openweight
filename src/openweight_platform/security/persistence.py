@@ -431,7 +431,13 @@ def ensure_runtime_database_role(
     if not runtime_password:
         raise ValueError("runtime_password must not be empty")
     role = sql.Identifier(runtime_role)
-    with psycopg.connect(**config.connect_kwargs) as connection:
+    # PostgreSQL utility statements such as ALTER ROLE cannot use Psycopg 3's
+    # default server-side parameter binding. Use a client-binding cursor for
+    # this narrowly scoped transaction so the password remains safely quoted.
+    with psycopg.connect(
+        **config.connect_kwargs,
+        cursor_factory=psycopg.ClientCursor,
+    ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %s)",

@@ -95,10 +95,16 @@ def test_runtime_role_is_forced_to_non_admin_attributes(
 ) -> None:
     cursor = RecordingCursor(iter(((role_exists,),)))
     connection = RecordingConnection(cursor)
+    connect_options: dict[str, object] = {}
+
+    def connect(**options: object) -> RecordingConnection:
+        connect_options.update(options)
+        return connection
+
     monkeypatch.setattr(
         persistence.psycopg,
         "connect",
-        lambda **_kwargs: connection,
+        connect,
     )
 
     persistence.ensure_runtime_database_role(
@@ -116,3 +122,4 @@ def test_runtime_role_is_forced_to_non_admin_attributes(
     assert "NOREPLICATION NOBYPASSRLS PASSWORD %s" in statements
     assert "not-a-real-runtime-secret" not in statements
     assert cursor.parameters[-1] == ("not-a-real-runtime-secret",)
+    assert connect_options["cursor_factory"] is persistence.psycopg.ClientCursor
