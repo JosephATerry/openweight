@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.engine import URL
 
+from openweight_platform.postgres_tls import resolve_postgres_tls_config
+
 
 DEFAULT_POSTGRES_HOST = "localhost"
 DEFAULT_POSTGRES_PORT = 5432
@@ -48,10 +50,10 @@ class PostgresConfig:
         if not 1 <= port <= 65535:
             raise ValueError("POSTGRES_PORT must be between 1 and 65535")
 
-        sslmode = values.get("POSTGRES_SSLMODE", "prefer").strip().lower()
-        if sslmode not in {"disable", "prefer", "require", "verify-ca", "verify-full"}:
-            raise ValueError("POSTGRES_SSLMODE is not supported")
-        sslrootcert = values.get("POSTGRES_SSLROOTCERT") or None
+        sslmode, sslrootcert = resolve_postgres_tls_config(
+            values.get("POSTGRES_SSLMODE", "prefer"),
+            values.get("POSTGRES_SSLROOTCERT"),
+        )
 
         return cls(
             database=values["POSTGRES_DB"],

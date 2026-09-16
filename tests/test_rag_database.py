@@ -1,3 +1,6 @@
+from pathlib import Path
+from urllib.parse import quote
+
 import pytest
 
 from openweight_platform.rag.database import PostgresConfig
@@ -46,21 +49,23 @@ def test_postgres_config_accepts_host_port_and_escapes_url_values():
     )
 
 
-def test_postgres_config_supports_certificate_verification() -> None:
+def test_postgres_config_supports_certificate_verification(tmp_path: Path) -> None:
+    ca_bundle = tmp_path / "ca-certificates.crt"
+    ca_bundle.write_text("test root bundle\n", encoding="utf-8")
     config = PostgresConfig.from_env(
         {
             "POSTGRES_DB": "policy_db",
             "POSTGRES_USER": "policy_user",
             "POSTGRES_PASSWORD": "placeholder",  # pragma: allowlist secret
             "POSTGRES_SSLMODE": "verify-full",
-            "POSTGRES_SSLROOTCERT": "system",
+            "POSTGRES_SSLROOTCERT": str(ca_bundle),
         }
     )
 
     assert config.connect_kwargs["sslmode"] == "verify-full"
-    assert config.connect_kwargs["sslrootcert"] == "system"
+    assert config.connect_kwargs["sslrootcert"] == str(ca_bundle)
     assert "sslmode=verify-full" in config.sqlalchemy_url
-    assert "sslrootcert=system" in config.sqlalchemy_url
+    assert f"sslrootcert={quote(str(ca_bundle), safe='')}" in config.sqlalchemy_url
 
 
 def test_postgres_config_rejects_missing_credentials():

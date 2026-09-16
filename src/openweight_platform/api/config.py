@@ -22,6 +22,10 @@ from openweight_platform.backends.muse_glimmer import (
     DEFAULT_MUSE_TIMEOUT_SECONDS,
     SUPPORTED_REASONING_STRENGTHS,
 )
+from openweight_platform.postgres_tls import (
+    POSTGRES_SSL_MODES,
+    resolve_postgres_tls_config,
+)
 SERVICE_NAME = "openweight-platform"
 DEFAULT_SERVICE_VERSION = "0.1.0"
 DEFAULT_API_HOST = "127.0.0.1"
@@ -33,7 +37,6 @@ MCP_SERVER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 MCP_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$")
 CHECKPOINT_BACKENDS = ("memory", "postgres")
 METRICS_ACCESS_MODES = ("public", "protected", "disabled")
-POSTGRES_SSL_MODES = ("disable", "prefer", "require", "verify-ca", "verify-full")
 DEPLOYMENT_PROFILES = ("local", "huggingface", "azure")
 HF_PROVIDER_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 DEFAULT_HF_PROVIDER = "groq"
@@ -492,10 +495,10 @@ class ServiceSettings:
                 user = values.get("POSTGRES_USER", "").strip()
                 password = values.get("POSTGRES_PASSWORD", "")
                 host = values.get("POSTGRES_HOST", "localhost").strip()
-                sslmode = values.get("POSTGRES_SSLMODE", "prefer").strip().lower()
-                sslrootcert = _optional_text(values, "POSTGRES_SSLROOTCERT")
-                if sslmode not in POSTGRES_SSL_MODES:
-                    raise ValueError("unsupported PostgreSQL SSL mode")
+                sslmode, sslrootcert = resolve_postgres_tls_config(
+                    values.get("POSTGRES_SSLMODE", "prefer"),
+                    values.get("POSTGRES_SSLROOTCERT"),
+                )
                 if not all((database, user, password, host)):
                     raise ValueError("database configuration is incomplete")
                 database_config = DatabaseConfig(

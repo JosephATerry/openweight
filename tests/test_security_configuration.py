@@ -207,13 +207,44 @@ def test_container_app_enables_cloud_auth_durability_tls_and_disables_metrics() 
         ("OPENWEIGHT_CHECKPOINT_BACKEND", "postgres"),
         ("OPENWEIGHT_METRICS_ACCESS_MODE", "disabled"),
         ("POSTGRES_SSLMODE", "verify-full"),
-        ("POSTGRES_SSLROOTCERT", "system"),
         ("LANGGRAPH_STRICT_MSGPACK", "true"),
     ):
         assert re.search(rf'name\s+=\s+"{name}"\s+value\s+=\s+"{value}"', app)
     assert 'name  = "OPENWEIGHT_AUTH_ENABLED"' in app
     assert "var.product_auth_enabled" in app
     assert 'resource "azurerm_key_vault_secret"' not in app
+
+
+def test_azure_database_tls_uses_one_explicit_container_ca_bundle() -> None:
+    dockerfile = read("Dockerfile")
+    terraform = "\n".join(
+        read(path)
+        for path in (
+            "infra/terraform/bootstrap_jobs.tf",
+            "infra/terraform/container_apps.tf",
+        )
+    )
+    migration = read("scripts/migrate_database.py")
+    indexing = read("scripts/index_policy_corpus.py")
+    rag_config = read("src/openweight_platform/rag/database.py")
+    runtime_config = read("src/openweight_platform/api/config.py")
+
+    assert (
+        "POSTGRES_SSLROOTCERT=/etc/ssl/certs/ca-certificates.crt" in dockerfile
+    )
+    assert 'test -f "${POSTGRES_SSLROOTCERT}"' in dockerfile
+    assert 'test -r "${POSTGRES_SSLROOTCERT}"' in dockerfile
+    assert 'test -s "${POSTGRES_SSLROOTCERT}"' in dockerfile
+    assert "POSTGRES_SSLROOTCERT" not in terraform
+    assert 'name  = "POSTGRES_SSLMODE"' in terraform
+    assert 'value = "verify-full"' in terraform
+    assert "PostgresConfig.from_env()" in migration
+    assert "PostgresConfig.from_env()" in indexing
+    assert "resolve_postgres_tls_config" in rag_config
+    assert "resolve_postgres_tls_config" in runtime_config
+    assert "sslmode=disable" not in terraform
+    assert "sslmode=require" not in terraform
+    assert "sslmode=verify-ca" not in terraform
 
 
 def test_requirements_pin_standard_durability_and_jwt_packages() -> None:

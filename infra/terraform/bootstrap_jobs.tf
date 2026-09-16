@@ -65,11 +65,6 @@ resource "azurerm_container_app_job" "database_migration" {
       }
 
       env {
-        name  = "POSTGRES_SSLROOTCERT"
-        value = "system"
-      }
-
-      env {
         name  = "POSTGRES_USER"
         value = var.postgresql_administrator_login
       }
@@ -159,11 +154,6 @@ resource "azurerm_container_app_job" "policy_index" {
       env {
         name  = "POSTGRES_SSLMODE"
         value = "verify-full"
-      }
-
-      env {
-        name  = "POSTGRES_SSLROOTCERT"
-        value = "system"
       }
 
       env {

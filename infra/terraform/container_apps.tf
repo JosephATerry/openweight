@@ -287,11 +287,6 @@ resource "azurerm_container_app" "api" {
         value = "verify-full"
       }
 
-      env {
-        name  = "POSTGRES_SSLROOTCERT"
-        value = "system"
-      }
-
       liveness_probe {
         transport               = "HTTP"
         port                    = var.container_port

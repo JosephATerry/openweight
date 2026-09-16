@@ -119,7 +119,8 @@ private connectivity, and TLS 1.2 or newer. Terraform allowlists `vector` with
 
 The private, no-ingress manual `migrate` job runs
 `scripts/migrate_database.py --seed-demo-data` inside the VNet-integrated
-Container Apps environment with `verify-full` TLS. It uses versionless Key
+Container Apps environment with `verify-full` TLS and the production image's
+explicit distro-managed CA bundle. It uses versionless Key
 Vault references; only secret URIs enter Terraform. The script serializes
 executions with a PostgreSQL advisory lock and records migration
 version 1. The additive migration:

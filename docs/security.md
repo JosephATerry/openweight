@@ -96,8 +96,13 @@ after driver/token lifecycle work is implemented and tested.
 
 PostgreSQL clients accept explicit `POSTGRES_SSLMODE` and
 `POSTGRES_SSLROOTCERT`. `demo` and `production` configuration fails readiness
-validation unless `sslmode=verify-full`; Terraform supplies `verify-full` with
-the system trust roots. Compose keeps `prefer` for local ergonomics.
+validation unless `sslmode=verify-full`. The production image supplies the
+Debian-managed `/etc/ssl/certs/ca-certificates.crt` bundle explicitly because
+the binary psycopg distribution bundles libpq/OpenSSL with build-specific
+default trust paths. Startup fails closed when the configured bundle is not an
+absolute, readable, nonempty regular file. Terraform supplies `verify-full`
+without overriding the image trust path; Compose keeps `prefer` for local
+ergonomics. No server or intermediate certificate is pinned.
 
 `scripts/setup_security.py` is an administrator/migration command. It creates
 LangGraph checkpoint tables and the application security tables. If an existing

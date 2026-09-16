@@ -21,12 +21,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
     OPENWEIGHT_BUILD_SHA=${OPENWEIGHT_BUILD_SHA} \
     OPENWEIGHT_API_HOST=0.0.0.0 \
-    OPENWEIGHT_API_PORT=8000
+    OPENWEIGHT_API_PORT=8000 \
+    POSTGRES_SSLROOTCERT=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
 COPY requirements.txt requirements-container.txt ./
-RUN python -m pip install \
+RUN test -f "${POSTGRES_SSLROOTCERT}" \
+    && test -r "${POSTGRES_SSLROOTCERT}" \
+    && test -s "${POSTGRES_SSLROOTCERT}" \
+    && python -m pip install \
         --disable-pip-version-check \
         --no-cache-dir \
         --requirement requirements-container.txt \

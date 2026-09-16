@@ -417,7 +417,7 @@ def test_migration_job_uses_private_tls_digest_and_versionless_secret_references
     assert 'value = azurerm_postgresql_flexible_server.main.fqdn' in jobs
     assert 'value = "5432"' in jobs
     assert 'value = "verify-full"' in jobs
-    assert 'value = "system"' in jobs
+    assert "POSTGRES_SSLROOTCERT" not in jobs
     assert 'value = azurerm_postgresql_flexible_server_database.application.name' in jobs
     assert 'parallelism              = 1' in jobs
     assert 'replica_completion_count = 1' in jobs
