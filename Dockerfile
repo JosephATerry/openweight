@@ -10,7 +10,7 @@ ARG VITE_DEMO_MODE=false
 ENV VITE_DEMO_MODE=${VITE_DEMO_MODE}
 RUN npm run build
 
-FROM python:3.12.11-slim-bookworm AS runtime
+FROM python:3.14.7-slim-bookworm AS runtime
 
 ARG OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false
 ARG OPENWEIGHT_BUILD_SHA=unreleased
