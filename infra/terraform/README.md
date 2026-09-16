@@ -62,7 +62,10 @@ Log Analytics. Health checks never call an embedding model or GPT-OSS.
    configured. It builds a Linux/amd64 migration image with
    `OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`, pushes a source-SHA tag, resolves
    the digest, and cannot apply Terraform, start a job, or change a database or
-   Container App.
+   Container App. The same manual path accepts an explicit `indexing_image=true`
+   input only alongside `build_only=true`; that flavor preloads the pinned
+   public Qwen model and uses a distinct source-SHA-derived `-indexing` tag.
+   Every default and automatic build remains model-free.
 3. Authorized operations create three separate Key Vault secrets: database
    administrator bootstrap password, runtime database password, and the Azure
    inference-only HF token. Terraform never manages their values.

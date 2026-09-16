@@ -196,11 +196,15 @@ disabled until the separate environment-level, non-secret
 `AZURE_BUILD_ENABLED` variable is exactly `true`; `AZURE_DEPLOY_ENABLED`
 remains an independent gate for normal CI-driven releases. Manual event/input
 eligibility starts the protected job, whose first step checks the build gate
-before checkout or Azure login. Build-only forces
+before checkout or Azure login. Build-only defaults to
 `OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=false`, targets Linux/amd64, pushes the
-source-SHA tag, records its immutable ACR digest, and then stops. It cannot
-apply Terraform, start a Container Apps Job, change the database, deploy an
-application, or bypass the later reviewed lifecycle.
+source-SHA tag, records its immutable ACR digest, and then stops. An indexing
+image requires the additional explicit `indexing_image=true` input; only that
+flavor preloads the pinned public Qwen embedding model and publishes a distinct
+`<source-sha>-indexing` tag. Automatic and ordinary build-only paths remain
+model-free. Neither flavor can apply Terraform, start a Container Apps Job,
+change the database, deploy an application, or bypass the later reviewed
+lifecycle.
 
 A separate manual `auth_only` diagnostic job is bound to the same protected
 `azure-production` Environment but does not consult or change either cloud
@@ -210,8 +214,9 @@ refreshes that subscription through a read-only Azure Resource Manager query,
 and checks the expected resource-group target name. It does not require broader
 resource-group Reader access beyond the CI identity's registry-scoped role. The
 job has no checkout, image build or push, ACR operation, Terraform, deployment,
-Key Vault, or database step. Selecting both manual booleans makes both manual
-jobs ineligible; selecting neither also performs no Azure action.
+Key Vault, or database step. Selecting both primary manual modes makes both
+jobs ineligible; selecting `indexing_image` without `build_only` also performs
+no Azure action.
 
 Database migration and policy indexing use separately privileged, manually
 triggered Container Apps Jobs and are never part of steady-state CD. Migration

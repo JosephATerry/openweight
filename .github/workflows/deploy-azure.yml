@@ -20,6 +20,11 @@ name: Deploy Azure Container App
         required: true
         default: false
         type: boolean
+      indexing_image:
+        description: Preload the pinned public Qwen embedding model for an explicit build-only indexing image
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -35,7 +40,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' &&
       inputs.auth_only &&
-      !inputs.build_only
+      !inputs.build_only &&
+      !inputs.indexing_image
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -101,6 +107,7 @@ jobs:
         env:
           AUTH_ONLY_REQUESTED: ${{ inputs.auth_only }}
           BUILD_ONLY_REQUESTED: ${{ inputs.build_only }}
+          INDEXING_IMAGE_REQUESTED: ${{ inputs.indexing_image }}
           AZURE_BUILD_ENABLED: ${{ vars.AZURE_BUILD_ENABLED }}
           AZURE_DEPLOY_ENABLED: ${{ vars.AZURE_DEPLOY_ENABLED }}
         shell: bash
@@ -108,11 +115,16 @@ jobs:
           set -euo pipefail
           authorized=false
           operation=none
+          image_flavor=model_free
 
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && \
                 "$BUILD_ONLY_REQUESTED" == "true" && \
                 "$AUTH_ONLY_REQUESTED" != "true" ]]; then
             operation=build_only
+            if [[ "$INDEXING_IMAGE_REQUESTED" == "true" ]]; then
+              operation=indexing_image
+              image_flavor=indexing
+            fi
             if [[ "$AZURE_BUILD_ENABLED" == "true" ]]; then
               authorized=true
             fi
@@ -125,6 +137,7 @@ jobs:
 
           echo "authorized=$authorized" >> "$GITHUB_OUTPUT"
           echo "operation=$operation" >> "$GITHUB_OUTPUT"
+          echo "image_flavor=$image_flavor" >> "$GITHUB_OUTPUT"
           if [[ "$authorized" == "true" ]]; then
             echo "Azure ${operation} authorization gate: PASS"
           else
@@ -222,14 +235,24 @@ jobs:
         env:
           ACR_LOGIN_SERVER: ${{ steps.targets.outputs.login_server }}
           DOCKER_CONFIG: ${{ runner.temp }}/openweight-docker-config
+          IMAGE_FLAVOR: ${{ steps.authorization.outputs.image_flavor }}
         run: |
           set -euo pipefail
           umask 077
-          image_tag="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${SOURCE_SHA}"
-          preload_demo_embeddings=true
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.build_only }}" == "true" ]]; then
-            preload_demo_embeddings=false
-          fi
+          preload_demo_embeddings=false
+          tag_suffix=""
+          case "$IMAGE_FLAVOR" in
+            model_free) ;;
+            indexing)
+              preload_demo_embeddings=true
+              tag_suffix="-indexing"
+              ;;
+            *)
+              echo "Unsupported image flavor" >&2
+              exit 1
+              ;;
+          esac
+          image_tag="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${SOURCE_SHA}${tag_suffix}"
           metadata_file="$(mktemp "${RUNNER_TEMP}/openweight-build-metadata.XXXXXX.json")"
           trap 'rm -f "$metadata_file"' EXIT
           docker buildx build \
@@ -261,13 +284,18 @@ jobs:
           docker logout "$ACR_LOGIN_SERVER" >/dev/null 2>&1
           rm -rf -- "$DOCKER_CONFIG"
 
-      - name: Stop after migration image publication
+      - name: Stop after build-only image publication
         if: >-
           steps.authorization.outputs.authorized == 'true' &&
           github.event_name == 'workflow_dispatch' && inputs.build_only
         run: |
-          echo "## Azure model-free migration image" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image pushed by immutable digest without model preload; no Terraform, job, database, or Container App action occurred." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.authorization.outputs.image_flavor }}" == "indexing" ]]; then
+            echo "## Azure model-enabled indexing image" >> "$GITHUB_STEP_SUMMARY"
+            echo "Pinned public Qwen embeddings were preloaded at build time; no Terraform, job, database, or Container App action occurred." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Azure model-free migration image" >> "$GITHUB_STEP_SUMMARY"
+            echo "Image pushed by immutable digest without model preload; no Terraform, job, database, or Container App action occurred." >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.image.outputs.immutable_image }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

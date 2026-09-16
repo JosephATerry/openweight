@@ -340,6 +340,7 @@ def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
     assert authorization["env"] == {
         "AUTH_ONLY_REQUESTED": "${{ inputs.auth_only }}",
         "BUILD_ONLY_REQUESTED": "${{ inputs.build_only }}",
+        "INDEXING_IMAGE_REQUESTED": "${{ inputs.indexing_image }}",
         "AZURE_BUILD_ENABLED": "${{ vars.AZURE_BUILD_ENABLED }}",
         "AZURE_DEPLOY_ENABLED": "${{ vars.AZURE_DEPLOY_ENABLED }}",
     }
@@ -351,6 +352,7 @@ def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
     assert '"$AZURE_DEPLOY_ENABLED" == "true"' in commands
     assert commands.count("authorized=true") == 2
     assert 'echo "authorized=$authorized" >> "$GITHUB_OUTPUT"' in commands
+    assert 'echo "image_flavor=$image_flavor" >> "$GITHUB_OUTPUT"' in commands
     assert "authorization gate: CLOSED" in commands
     assert "secrets.AZURE_DEPLOY_ENABLED" not in source
     assert "secrets.AZURE_BUILD_ENABLED" not in source
@@ -364,7 +366,7 @@ def test_azure_auth_only_job_is_manual_isolated_and_least_privilege() -> None:
     auth_condition = " ".join(auth["if"].split())
     deploy_condition = " ".join(deploy["if"].split())
 
-    assert set(dispatch_inputs) == {"auth_only", "build_only"}
+    assert set(dispatch_inputs) == {"auth_only", "build_only", "indexing_image"}
     assert dispatch_inputs["auth_only"] == {
         "description": (
             "Verify GitHub OIDC authentication to Azure without building or "
@@ -376,9 +378,11 @@ def test_azure_auth_only_job_is_manual_isolated_and_least_privilege() -> None:
     }
     assert dispatch_inputs["build_only"]["default"] is False
     assert dispatch_inputs["build_only"]["type"] == "boolean"
+    assert dispatch_inputs["indexing_image"]["default"] is False
+    assert dispatch_inputs["indexing_image"]["type"] == "boolean"
     assert auth_condition == (
         "github.event_name == 'workflow_dispatch' && inputs.auth_only && "
-        "!inputs.build_only"
+        "!inputs.build_only && !inputs.indexing_image"
     )
     assert "inputs.build_only && !inputs.auth_only" in deploy_condition
     assert "AZURE_BUILD_ENABLED" not in deploy_condition
@@ -470,7 +474,7 @@ def test_azure_auth_only_job_has_no_mutation_or_application_execution_surface() 
     ]
 
 
-def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> None:
+def test_azure_build_only_has_explicit_indexing_flavor_and_cannot_deploy() -> None:
     configuration = azure_deploy_workflow()
     deploy = configuration["jobs"]["deploy"]
     condition = deploy["if"]
@@ -500,6 +504,20 @@ def test_azure_build_only_is_separately_gated_model_free_and_non_deploying() -> 
     )
     assert "workflow_dispatch" not in normalized_expression(release["if"])
     assert "preload_demo_embeddings=false" in commands
+    assert "preload_demo_embeddings=true" in commands
+    assert 'IMAGE_FLAVOR: ${{ steps.authorization.outputs.image_flavor }}' in source
+    assert "image_flavor=model_free" in authorization_commands
+    assert '"$INDEXING_IMAGE_REQUESTED" == "true"' in authorization_commands
+    assert "image_flavor=indexing" in authorization_commands
+    assert 'tag_suffix="-indexing"' in commands
+    assert 'IMAGE_REPOSITORY}:${SOURCE_SHA}${tag_suffix}' in commands
+    assert commands.count("preload_demo_embeddings=true") == 1
+    assert commands.count("preload_demo_embeddings=false") == 1
+    assert authorization_commands.index('if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch"') < (
+        authorization_commands.index('"$INDEXING_IMAGE_REQUESTED" == "true"')
+    ) < authorization_commands.index(
+        'elif [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]'
+    )
     assert "docker buildx build" in commands
     assert "--platform linux/amd64" in commands
     assert "--push" in commands
@@ -639,7 +657,7 @@ def test_azure_pre_runner_conditions_use_only_event_input_and_trust_contexts() -
     assert "head_repository.full_name == github.repository" in deploy_condition
     assert auth_condition == (
         "github.event_name == 'workflow_dispatch' && inputs.auth_only && "
-        "!inputs.build_only"
+        "!inputs.build_only && !inputs.indexing_image"
     )
     assert "pull_request" not in configuration["on"]
 
