@@ -260,6 +260,7 @@ def test_deployment_has_least_privilege_and_serialized_releases() -> None:
     ]
 
     assert configuration["permissions"] == {
+        "actions": "read",
         "contents": "read",
         "id-token": "write",
     }
@@ -341,6 +342,7 @@ def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
         "AUTH_ONLY_REQUESTED": "${{ inputs.auth_only }}",
         "BUILD_ONLY_REQUESTED": "${{ inputs.build_only }}",
         "INDEXING_IMAGE_REQUESTED": "${{ inputs.indexing_image }}",
+        "DEPLOY_RUNTIME_REQUESTED": "${{ inputs.deploy_runtime }}",
         "AZURE_BUILD_ENABLED": "${{ vars.AZURE_BUILD_ENABLED }}",
         "AZURE_DEPLOY_ENABLED": "${{ vars.AZURE_DEPLOY_ENABLED }}",
     }
@@ -350,7 +352,7 @@ def test_azure_deployment_is_disabled_safely_until_explicitly_enabled() -> None:
     assert 'authorized=false' in commands
     assert '"$AZURE_BUILD_ENABLED" == "true"' in commands
     assert '"$AZURE_DEPLOY_ENABLED" == "true"' in commands
-    assert commands.count("authorized=true") == 2
+    assert commands.count("authorized=true") == 3
     assert 'echo "authorized=$authorized" >> "$GITHUB_OUTPUT"' in commands
     assert 'echo "image_flavor=$image_flavor" >> "$GITHUB_OUTPUT"' in commands
     assert "authorization gate: CLOSED" in commands
@@ -366,7 +368,12 @@ def test_azure_auth_only_job_is_manual_isolated_and_least_privilege() -> None:
     auth_condition = " ".join(auth["if"].split())
     deploy_condition = " ".join(deploy["if"].split())
 
-    assert set(dispatch_inputs) == {"auth_only", "build_only", "indexing_image"}
+    assert set(dispatch_inputs) == {
+        "auth_only",
+        "build_only",
+        "indexing_image",
+        "deploy_runtime",
+    }
     assert dispatch_inputs["auth_only"] == {
         "description": (
             "Verify GitHub OIDC authentication to Azure without building or "
@@ -380,9 +387,11 @@ def test_azure_auth_only_job_is_manual_isolated_and_least_privilege() -> None:
     assert dispatch_inputs["build_only"]["type"] == "boolean"
     assert dispatch_inputs["indexing_image"]["default"] is False
     assert dispatch_inputs["indexing_image"]["type"] == "boolean"
+    assert dispatch_inputs["deploy_runtime"]["default"] is False
+    assert dispatch_inputs["deploy_runtime"]["type"] == "boolean"
     assert auth_condition == (
         "github.event_name == 'workflow_dispatch' && inputs.auth_only && "
-        "!inputs.build_only && !inputs.indexing_image"
+        "!inputs.build_only && !inputs.indexing_image && !inputs.deploy_runtime"
     )
     assert "inputs.build_only && !inputs.auth_only" in deploy_condition
     assert "AZURE_BUILD_ENABLED" not in deploy_condition
@@ -499,10 +508,11 @@ def test_azure_build_only_has_explicit_indexing_flavor_and_cannot_deploy() -> No
         "${{ vars.AZURE_BUILD_ENABLED }}"
     )
     assert '"$AZURE_BUILD_ENABLED" == "true"' in authorization_commands
-    assert "github.event_name == 'workflow_run'" in normalized_expression(
-        release["if"]
-    )
-    assert "workflow_dispatch" not in normalized_expression(release["if"])
+    release_condition = normalized_expression(release["if"])
+    assert "github.event_name == 'workflow_run'" in release_condition
+    assert "inputs.deploy_runtime" in release_condition
+    assert "inputs.build_only" not in release_condition
+    assert "inputs.indexing_image" not in release_condition
     assert "preload_demo_embeddings=false" in commands
     assert "preload_demo_embeddings=true" in commands
     assert 'IMAGE_FLAVOR: ${{ steps.authorization.outputs.image_flavor }}' in source
@@ -511,7 +521,7 @@ def test_azure_build_only_has_explicit_indexing_flavor_and_cannot_deploy() -> No
     assert "image_flavor=indexing" in authorization_commands
     assert 'tag_suffix="-indexing"' in commands
     assert 'IMAGE_REPOSITORY}:${SOURCE_SHA}${tag_suffix}' in commands
-    assert commands.count("preload_demo_embeddings=true") == 1
+    assert commands.count("preload_demo_embeddings=true") == 2
     assert commands.count("preload_demo_embeddings=false") == 1
     assert authorization_commands.index('if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch"') < (
         authorization_commands.index('"$INDEXING_IMAGE_REQUESTED" == "true"')
@@ -657,9 +667,59 @@ def test_azure_pre_runner_conditions_use_only_event_input_and_trust_contexts() -
     assert "head_repository.full_name == github.repository" in deploy_condition
     assert auth_condition == (
         "github.event_name == 'workflow_dispatch' && inputs.auth_only && "
-        "!inputs.build_only && !inputs.indexing_image"
+        "!inputs.build_only && !inputs.indexing_image && !inputs.deploy_runtime"
     )
     assert "pull_request" not in configuration["on"]
+
+
+def test_azure_manual_runtime_release_is_ci_verified_preloaded_and_dual_gated() -> None:
+    configuration = azure_deploy_workflow()
+    deploy = configuration["jobs"]["deploy"]
+    condition = normalized_expression(deploy["if"])
+    authorization = deploy["steps"][0]
+    commands = authorization["run"]
+    steps = {step["name"]: step for step in deploy["steps"]}
+    ci_check = steps["Confirm manual runtime revision passed exact-SHA CI"]
+    image = steps["Build and push the production image"]
+    release = steps["Deploy one digest-pinned Container App revision"]
+    verification = steps["Wait for the new revision and verify safe endpoints"]
+
+    assert configuration["permissions"] == {
+        "actions": "read",
+        "contents": "read",
+        "id-token": "write",
+    }
+    assert (
+        "github.event_name == 'workflow_dispatch' && inputs.deploy_runtime && "
+        "!inputs.auth_only && !inputs.build_only && !inputs.indexing_image"
+    ) in condition
+    assert authorization["env"]["DEPLOY_RUNTIME_REQUESTED"] == (
+        "${{ inputs.deploy_runtime }}"
+    )
+    assert 'image_flavor=runtime' in commands
+    assert '"$AZURE_BUILD_ENABLED" == "true"' in commands
+    assert '"$AZURE_DEPLOY_ENABLED" == "true"' in commands
+    assert "github.event_name == 'workflow_dispatch'" in normalized_expression(
+        ci_check["if"]
+    )
+    assert "inputs.deploy_runtime" in normalized_expression(ci_check["if"])
+    assert "actions/runs" in ci_check["run"]
+    assert 'head_sha == $sha' in ci_check["run"]
+    assert '.conclusion == "success"' in ci_check["run"]
+    assert "Exact-SHA push CI verification: PASS" in ci_check["run"]
+    assert 'runtime)' in image["run"]
+    assert 'tag_suffix="-runtime"' in image["run"]
+    assert image["run"].count("preload_demo_embeddings=true") == 2
+    for step in (release, verification):
+        expression = normalized_expression(step["if"])
+        assert expression.startswith(
+            "steps.authorization.outputs.authorized == 'true' && ("
+        )
+        assert "github.event_name == 'workflow_run'" in expression
+        assert "inputs.deploy_runtime" in expression
+    assert "inputs.deploy_runtime" not in normalized_expression(
+        steps["Stop after build-only image publication"]["if"]
+    )
 
 
 def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:
@@ -672,6 +732,7 @@ def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:
     ]
 
     assert configuration["permissions"] == {
+        "actions": "read",
         "contents": "read",
         "id-token": "write",
     }

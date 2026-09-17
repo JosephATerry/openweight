@@ -25,8 +25,14 @@ name: Deploy Azure Container App
         required: true
         default: false
         type: boolean
+      deploy_runtime:
+        description: Build and deploy a pinned-Qwen runtime image after successful exact-SHA CI
+        required: true
+        default: false
+        type: boolean
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -41,7 +47,8 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       inputs.auth_only &&
       !inputs.build_only &&
-      !inputs.indexing_image
+      !inputs.indexing_image &&
+      !inputs.deploy_runtime
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -83,7 +90,9 @@ jobs:
     name: Publish immutable image and deploy current main
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.build_only &&
-      !inputs.auth_only) ||
+      !inputs.auth_only && !inputs.deploy_runtime) ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_runtime &&
+      !inputs.auth_only && !inputs.build_only && !inputs.indexing_image) ||
       (github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -108,6 +117,7 @@ jobs:
           AUTH_ONLY_REQUESTED: ${{ inputs.auth_only }}
           BUILD_ONLY_REQUESTED: ${{ inputs.build_only }}
           INDEXING_IMAGE_REQUESTED: ${{ inputs.indexing_image }}
+          DEPLOY_RUNTIME_REQUESTED: ${{ inputs.deploy_runtime }}
           AZURE_BUILD_ENABLED: ${{ vars.AZURE_BUILD_ENABLED }}
           AZURE_DEPLOY_ENABLED: ${{ vars.AZURE_DEPLOY_ENABLED }}
         shell: bash
@@ -119,13 +129,25 @@ jobs:
 
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && \
                 "$BUILD_ONLY_REQUESTED" == "true" && \
-                "$AUTH_ONLY_REQUESTED" != "true" ]]; then
+                "$AUTH_ONLY_REQUESTED" != "true" && \
+                "$DEPLOY_RUNTIME_REQUESTED" != "true" ]]; then
             operation=build_only
             if [[ "$INDEXING_IMAGE_REQUESTED" == "true" ]]; then
               operation=indexing_image
               image_flavor=indexing
             fi
             if [[ "$AZURE_BUILD_ENABLED" == "true" ]]; then
+              authorized=true
+            fi
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && \
+                  "$DEPLOY_RUNTIME_REQUESTED" == "true" && \
+                  "$AUTH_ONLY_REQUESTED" != "true" && \
+                  "$BUILD_ONLY_REQUESTED" != "true" && \
+                  "$INDEXING_IMAGE_REQUESTED" != "true" ]]; then
+            operation=deploy
+            image_flavor=runtime
+            if [[ "$AZURE_BUILD_ENABLED" == "true" && \
+                  "$AZURE_DEPLOY_ENABLED" == "true" ]]; then
               authorized=true
             fi
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
@@ -158,6 +180,36 @@ jobs:
         run: |
           remote_sha="$(git ls-remote "https://github.com/${REPOSITORY}.git" refs/heads/main | cut -f1)"
           test "$SOURCE_SHA" = "$remote_sha"
+
+      - name: Confirm manual runtime revision passed exact-SHA CI
+        if: >-
+          steps.authorization.outputs.authorized == 'true' &&
+          github.event_name == 'workflow_dispatch' && inputs.deploy_runtime
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          ci_conclusion="$(
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --proto '=https' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+              --get \
+              --data-urlencode "head_sha=${SOURCE_SHA}" \
+              --data-urlencode 'per_page=100' \
+              "${GITHUB_API_URL}/repos/${REPOSITORY}/actions/runs" |
+            jq -er \
+              --arg sha "$SOURCE_SHA" \
+              '[.workflow_runs[] | select(.name == "CI" and .event == "push" and .head_branch == "main" and .head_sha == $sha and .conclusion == "success")] | length'
+          )"
+          test "$ci_conclusion" -ge 1
+          echo "Exact-SHA push CI verification: PASS"
 
       - name: Authenticate to Azure with GitHub OIDC
         if: ${{ steps.authorization.outputs.authorized == 'true' }}
@@ -247,6 +299,10 @@ jobs:
               preload_demo_embeddings=true
               tag_suffix="-indexing"
               ;;
+            runtime)
+              preload_demo_embeddings=true
+              tag_suffix="-runtime"
+              ;;
             *)
               echo "Unsupported image flavor" >&2
               exit 1
@@ -304,7 +360,8 @@ jobs:
         id: release
         if: >-
           steps.authorization.outputs.authorized == 'true' &&
-          github.event_name == 'workflow_run'
+          (github.event_name == 'workflow_run' ||
+          (github.event_name == 'workflow_dispatch' && inputs.deploy_runtime))
         env:
           IMMUTABLE_IMAGE: ${{ steps.image.outputs.immutable_image }}
         run: |
@@ -328,7 +385,8 @@ jobs:
       - name: Wait for the new revision and verify safe endpoints
         if: >-
           steps.authorization.outputs.authorized == 'true' &&
-          github.event_name == 'workflow_run'
+          (github.event_name == 'workflow_run' ||
+          (github.event_name == 'workflow_dispatch' && inputs.deploy_runtime))
         env:
           IMMUTABLE_IMAGE: ${{ steps.image.outputs.immutable_image }}
           NEW_REVISION: ${{ steps.release.outputs.new_revision }}

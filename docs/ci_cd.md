@@ -206,6 +206,17 @@ model-free. Neither flavor can apply Terraform, start a Container Apps Job,
 change the database, deploy an application, or bypass the later reviewed
 lifecycle.
 
+The separately explicit manual production release uses
+`deploy_runtime=true` with `auth_only=false`, `build_only=false`, and
+`indexing_image=false`. It requires both `AZURE_BUILD_ENABLED=true` and
+`AZURE_DEPLOY_ENABLED=true`, verifies that the current-main SHA already has a
+successful push-triggered `CI` run, then builds Linux/amd64 with the pinned Qwen
+embedding model preloaded. The runtime tag is `<source-sha>-runtime`, while the
+Container App update consumes only the immutable Buildx digest. Contradictory
+manual modes fail closed. Automatic releases and all default inputs remain
+model-free, and the manual runtime path does not run migration, indexing,
+Terraform, or database commands.
+
 A separate manual `auth_only` diagnostic job is bound to the same protected
 `azure-production` Environment but does not consult or change either cloud
 execution gate. It exchanges GitHub's OIDC token through the pinned Azure login
