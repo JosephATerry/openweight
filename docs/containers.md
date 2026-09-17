@@ -140,7 +140,7 @@ from this local Compose posture.
 The HTTP layer is otherwise stateless and does not require a durable container
 filesystem. PostgreSQL is already addressed by hostname and can later become
 an external managed database. The configurable bind and port support the live
-Hugging Face Docker Space and the separate Azure Container Apps reference,
+Hugging Face Docker Space and the primary Azure Container Apps deployment,
 subject to their different networking, secrets, state, and inference profiles.
 
 Local Compose defaults to the process-local memory checkpoint backend. Set up

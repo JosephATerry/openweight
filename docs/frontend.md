@@ -36,7 +36,9 @@ MCP replacement.
   checkpoints and the execution ledger remain the full durable boundary.
 - **System** truthfully diagrams React and MCP as two surfaces over the same
   FastAPI security, LangGraph, PostgreSQL/pgvector, and controlled-executor
-  core. Azure architecture and deployment automation exist but are not deployed.
+  core. It also presents the guarded Azure production deployment and the
+  separate Hugging Face demo posture without conflating their identity or
+  persistence boundaries.
 
 The visual system uses native CSS, responsive layouts, semantic HTML, visible
 focus treatment, native dialog semantics, text-plus-color status indicators,

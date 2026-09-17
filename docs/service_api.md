@@ -189,4 +189,6 @@ deployment, or live enterprise tenant federation. The canonical local command
 binds to loopback. The deployed public Hugging Face profile adds bounded
 controls only around metered inference and uses synthetic process-local state
 with authentication disabled; it is not the production security or durability
-posture. Azure remains a Terraform reference architecture and is not deployed.
+posture. The primary Azure production deployment uses private
+PostgreSQL/pgvector, Key Vault references, managed identity, and the same
+sanitized API contracts.

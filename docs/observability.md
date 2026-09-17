@@ -141,7 +141,8 @@ does not create a cloud exporter account or Azure resource. Bearer tokens and
 claims are never telemetry attributes. Durable approval checkpoints are a
 separate PostgreSQL runtime concern and do not change these privacy rules.
 
-The React frontend and public Hugging Face profile are deployed. That profile
-disables the public metrics route and applies separate bounded controls only to
-metered inference requests. Live Azure observability remains reference
-architecture; no Azure environment is deployed.
+The React frontend is deployed in the primary Azure production environment and
+the alternate public Hugging Face profile. The Hugging Face profile disables
+the public metrics route and applies separate bounded controls only to metered
+inference requests. The Azure deployment retains the same telemetry allowlist
+while using its managed application and PostgreSQL infrastructure.

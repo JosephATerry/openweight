@@ -1,7 +1,7 @@
 # Hugging Face recruiter-demo profile
 
-D17A prepared the zero-infrastructure Docker Space profile while preserving the
-full local and production designs. The current public recruiter demo is
+The zero-infrastructure Docker Space profile preserves the full local and
+production designs. The alternate public recruiter demo is
 `josephaterry/openweight` at
 `https://josephaterry-openweight.hf.space`.
 
@@ -54,8 +54,8 @@ the boundary by reading a spoofable header directly.
 
 These controls limit request behavior; they cannot enforce a dollar budget.
 Spending limits, pay-as-you-go status, and provider quota must be set in the
-Hugging Face/provider account. D17A does not enable billing, buy credits,
-allocate GPU hardware, or create an endpoint.
+Hugging Face/provider account. This deployment profile does not enable billing,
+buy credits, allocate GPU hardware, or create an endpoint.
 
 ## Portable retrieval
 
@@ -114,12 +114,12 @@ fabricating an answer.
 The isolated, credential-free Space-style smoke profile is:
 
 ```bash
-docker compose -p openweight-d17a \
+docker compose -p openweight-hf-demo \
   -f deploy/huggingface/compose.yaml up --build --detach
 ```
 
 It enables the same pinned Qwen build-time preload intended for the public
-Space. The measured D17B image is approximately 1.4 GB, including about 1.2 GB
+Space. The measured demo image is approximately 1.4 GB, including about 1.2 GB
 of model/tokenizer/config files. Startup remains lazy: the encoder is present on
 disk but is loaded on CPU only for a policy query. No GPT-OSS provider request
 is made during build, startup, or health checks.

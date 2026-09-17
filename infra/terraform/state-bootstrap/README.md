@@ -7,12 +7,12 @@ transport, shared-key authentication disabled, blob versioning/change feed,
 14-day blob and container soft deletion, and `prevent_destroy` guards.
 
 It intentionally has local state because an Azure backend cannot store the
-state that creates itself. D19D initialized only local provider plugins with
-the backend disabled and did not apply this root. During a reviewed D19E
-bootstrap, apply it once with a dedicated infrastructure operator object ID,
-then keep `infra/terraform/state-bootstrap/terraform.tfstate` local, ignored,
-mode `0600`, and separately secured. Do not migrate that bootstrap state into
-the storage account it manages.
+state that creates itself. The production remote-state foundation was created
+through a reviewed one-time bootstrap with a dedicated infrastructure operator
+object ID. Keep `infra/terraform/state-bootstrap/terraform.tfstate` local,
+ignored, mode `0600`, and separately secured. Do not migrate that bootstrap
+state into the storage account it manages or reapply the root merely to
+recreate an existing foundation.
 
 Supply the main application's partial `azurerm` backend with reviewed values
 outside Git, for example in `/tmp/openweight-demo.backend.hcl`:
@@ -58,5 +58,6 @@ reviewed operator or GitHub-hosted runner can reach the data plane; Entra RBAC
 still gates every state operation. A private endpoint would add fixed cost and
 hosted-runner connectivity complexity to this free-account portfolio posture.
 
-D19D validated this root locally. It did not initialize a state backend,
-authenticate to Azure, or create any resource.
+For future maintenance, validate this root locally with the backend disabled.
+Any change to the existing state foundation requires a separate reviewed and
+authorized infrastructure operation.

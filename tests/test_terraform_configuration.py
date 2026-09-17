@@ -333,7 +333,7 @@ def test_central_us_recovery_inputs_and_global_names_are_region_specific() -> No
     assert "https://kv-replace123-cus-owp.vault.azure.net/secrets/" in example
 
 
-def test_documentation_preserves_d12_and_d14_boundaries() -> None:
+def test_documentation_preserves_runtime_and_security_boundaries() -> None:
     readme = " ".join(_read("README.md").split())
     required_phrases = (
         "PostgresSaver",
@@ -342,7 +342,7 @@ def test_documentation_preserves_d12_and_d14_boundaries() -> None:
         "OPENWEIGHT_METRICS_ENABLED=false",
         "no GPU",
         "GitHub OIDC",
-        "did not authenticate to Azure",
+        "manages the live Azure production infrastructure",
     )
     assert all(phrase in readme for phrase in required_phrases)
 
