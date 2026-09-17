@@ -260,7 +260,6 @@ def test_deployment_has_least_privilege_and_serialized_releases() -> None:
     ]
 
     assert configuration["permissions"] == {
-        "actions": "read",
         "contents": "read",
         "id-token": "write",
     }
