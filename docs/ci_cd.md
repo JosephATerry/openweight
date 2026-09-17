@@ -1,7 +1,8 @@
 # Public CI/CD
 
 GitHub is the canonical engineering repository: it contains the application,
-tests, documentation, Docker configuration, and Azure reference architecture.
+tests, documentation, Docker configuration, and deployed Azure production
+architecture.
 The Hugging Face Space repository is a generated deployment artifact containing
 only the files needed to run the recruiter demo. Development does not occur in
 the Space repository. The intended GitHub repository is

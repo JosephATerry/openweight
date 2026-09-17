@@ -91,7 +91,7 @@ change. Backend controls remain authoritative.
 The [GitHub engineering case study](https://github.com/JosephATerry/openweight)
 covers the complete architecture and security model, PostgreSQL/pgvector
 durability, observability, containers, MCP, CI/CD, and the Terraform/Azure
-production reference design.
+production deployment.
 
 ## Public demo boundary
 
@@ -109,11 +109,11 @@ This Hugging Face Space is a bounded recruiter demonstration:
 - Citation-ID validation verifies membership in the retrieved evidence set,
   not semantic entailment; review the cited passage.
 - The public demo does not claim document-level ACL enforcement.
-- Azure is a production reference architecture and is **not deployed**.
+- Azure Container Apps is the primary production deployment; this Space is the
+  alternate hosted demo.
 
-The public Space does not run the full PostgreSQL/pgvector durability and
-enterprise identity posture represented by the local and production-reference
-architectures.
+The public Space does not run the private PostgreSQL/pgvector durability and
+managed-identity posture used by the Azure production deployment.
 
 ## Source and engineering case study
 
@@ -121,7 +121,7 @@ The canonical engineering repository is
 **[JosephATerry/openweight](https://github.com/JosephATerry/openweight)**. It
 contains the full technical case study, architecture, security boundaries,
 local/full deployment posture, CI/CD, containers, MCP, observability, and
-Azure/Terraform reference design.
+Azure/Terraform production design.
 
 ## Author
 

@@ -30,7 +30,7 @@ health endpoints.
 
 When authentication is enabled, the SDK exposes OAuth protected-resource
 metadata at the standard origin-level `/.well-known/oauth-protected-resource/`
-path and protects MCP Streamable HTTP with bearer authentication. The D14
+path and protects MCP Streamable HTTP with bearer authentication. The shared
 RS256 JWT verifier remains authoritative for signature, issuer, audience,
 subject, expiry, and not-before validation.
 
@@ -50,7 +50,7 @@ There is deliberately no tool for arbitrary SQL, shell commands, Python,
 generic HTTP proxying, arbitrary internal tool calls, arbitrary action
 arguments, training, evaluation, or model debugging.
 
-Roles map to the same D14 permissions used by FastAPI:
+Roles map to the same application permissions used by FastAPI:
 
 - `OpenWeight.Reader`: read-only tools.
 - `OpenWeight.Approver`: read-only tools and approval resume.
@@ -79,7 +79,7 @@ MCP proposal call
 MCP protocol statelessness does not discard application workflow state.
 PostgreSQL `PostgresSaver`, `security.approval_sessions`, and the deterministic
 `effect_id` ledger are reused directly. Sequential, concurrent, restarted, and
-multi-process retries therefore use D14's durable conflict/idempotency
+multi-process retries therefore use the application's durable conflict/idempotency
 semantics rather than an MCP-specific in-memory retry map. The resume tool
 accepts only an approval ID, decision, and optional comment; it cannot replace
 the proposal's action parameters.
@@ -90,7 +90,7 @@ multi-replica load testing are complete.
 
 ## Resources and prompts
 
-No MCP Resources or Prompts are registered in D15. The bounded tools already
+No MCP Resources or Prompts are registered. The bounded tools already
 provide the useful interoperability surface without creating a read-any-file
 capability or publishing policy documents wholesale. Internal prompts, hidden
 instructions, reasoning templates, repository files, training/evaluation
@@ -129,7 +129,7 @@ tool failure without a traceback or original exception text.
 | `OPENWEIGHT_MCP_ALLOWED_HOSTS` | loopback hosts | DNS-rebinding Host allowlist. |
 | `OPENWEIGHT_MCP_ALLOWED_ORIGINS` | loopback origins | Browser Origin allowlist. |
 
-Authentication follows `OPENWEIGHT_AUTH_ENABLED` and the D14 issuer, audience,
+Authentication follows `OPENWEIGHT_AUTH_ENABLED` and the shared issuer, audience,
 and JWKS settings. There is intentionally no second MCP-auth toggle. Production
 configuration fails closed when authenticated MCP lacks a public resource URL.
 No credential belongs in these settings, `.env.example`, or the image.
@@ -154,7 +154,7 @@ docker compose logs api
 An official Python client can connect with `mcp.client.Client` using that URL.
 Authenticated remote clients obtain and send an access token according to MCP
 OAuth discovery; local deterministic tests use the official in-memory client
-or injected D14 verifier and do not contact Entra.
+or an injected verifier and do not contact Entra.
 
 Policy search initializes its existing embedding dependency only when that
 specific tool is called. Protocol discovery and operational lookup tests do
@@ -166,14 +166,15 @@ not load Muse, GPT-OSS, Torch model weights, or a model server.
   durable proposal/resume contract is clearer for human approval and remains
   authoritative. No correctness depends on a live protocol round trip.
 - **Tasks extension:** not advertised or implemented. The installed stable
-  SDK does not provide a stable Tasks package, and D14 application workflow
+  SDK does not provide a stable Tasks package, and application workflow
   state is not mislabeled as MCP Tasks.
 - **Deprecated features:** new architecture does not use roots, sampling,
   protocol-level logging, ping-based health, legacy HTTP+SSE, or legacy
   elicitation. SDK compatibility code alone handles older protocol clients.
-- **Outbound MCP client:** deferred. D15 provides a strong server; the agent
+- **Outbound MCP client:** deferred. The current implementation provides a
+  bounded server; the agent
   does not yet consume arbitrary external MCP servers.
-- **MCP Apps:** deferred. D16 remains a custom React product frontend.
+- **MCP Apps:** deferred. OpenWeight retains its custom React product frontend.
 - **Enterprise Managed Authorization:** no speculative extension is enabled.
   The existing Entra-compatible OIDC validation and bounded roles provide the
   future alignment point for managed enterprise authorization.
@@ -182,8 +183,7 @@ not load Muse, GPT-OSS, Torch model weights, or a model server.
   calls. Any external conformance-suite result is reported separately and is
   not implied by the unit suite.
 
-The same endpoint can later share Azure Container Apps HTTPS ingress. The
-Terraform reference does not change in D15; deployment-specific URL and Host
-allowlists must be supplied when MCP is enabled. A future Hugging Face demo or
-React frontend remains separate and cannot bypass the approval/security
-boundary.
+The same endpoint can use Azure Container Apps HTTPS ingress when MCP is
+enabled. Deployment-specific URL and Host allowlists must be supplied. The
+public React frontend and alternate Hugging Face demo remain separate and
+cannot bypass the approval/security boundary.

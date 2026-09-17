@@ -2,11 +2,12 @@
 
 ## Status and invariant
 
-D19D implements this architecture in source only. Provider plugins were
-initialized locally with the Terraform backend disabled for schema validation.
-No Azure authentication, remote-state initialization/access, plan/apply,
-resource creation, secret creation, container upload, model call, or deployment
-occurred.
+This architecture is implemented in the live Azure production deployment.
+Terraform manages the networked application foundation, PostgreSQL/pgvector,
+Key Vault, managed identities, and least-privilege RBAC. Guarded GitHub Actions
+releases use OIDC to publish immutable images to ACR and deploy verified Azure
+Container Apps revisions. GPT-OSS inference remains external to Azure through
+Hugging Face Inference Providers and Groq.
 
 The model is not the security boundary. GPT-OSS can propose or explain; backend
 authentication, authorization, typed validation, deterministic policy checks,
@@ -103,8 +104,9 @@ Policy embeddings are a second manual job so a schema migration never silently
 executes a model. It runs only after migration succeeds. The app is created only
 after both jobs are verified. Ordinary app deploys never run either job.
 
-The small portfolio corpus deliberately uses exact pgvector scanning. D19G
-creates neither HNSW nor IVFFlat; ANN remains a later measured optimization.
+The small portfolio corpus deliberately uses exact pgvector scanning. The
+indexing lifecycle creates neither HNSW nor IVFFlat; ANN remains a later
+measured optimization.
 
 `/healthz` checks process liveness only. `/readyz` performs bounded,
 read-only checks for configuration, PostgreSQL connectivity, checkpoint and
@@ -187,6 +189,6 @@ The design keeps spending protection intact and does not require Pay-As-You-Go:
 - no fixed-cost edge, egress, cluster, accelerator, or premium networking layer
   is present.
 
-Allowances are time-, offer-, region-, and subscription-dependent. D19E must
-confirm them in the portal, review the cost estimate, and retain the existing
-$70 subscription budget alerts before any apply.
+Allowances are time-, offer-, region-, and subscription-dependent. Before any
+future infrastructure change, confirm them in the portal, review the cost
+estimate, and retain the existing subscription budget alerts.

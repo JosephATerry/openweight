@@ -1,10 +1,9 @@
 # Terraform Azure OpenWeight implementation
 
-This root is a source-level Azure implementation for the public portfolio
-deployment. D19D did not authenticate to Azure, initialize or access a remote
-backend, plan, apply, create a secret, push an image, or deploy an application.
-Provider plugins were initialized locally with `-backend=false` only for schema
-validation.
+This root manages the live Azure production infrastructure for OpenWeight.
+Terraform owns the foundation, network, identities, RBAC, managed database,
+Key Vault, and Container Apps configuration. Guarded application CD owns only
+the immutable runtime image field declared in the Container App lifecycle.
 
 ## Final architecture
 
@@ -13,8 +12,8 @@ private delegated PostgreSQL subnet and private DNS, Standard ACR, Container
 Apps Consumption environment, PostgreSQL Flexible Server, Key Vault, bounded
 Log Analytics, separate runtime/migration/indexing/CI identities, narrow RBAC,
 optional GitHub OIDC federation bound to an Environment, manual jobs, and the public
-HTTPS app. Federation is disabled by default until D19E/F deliberately enables
-the reviewed trust.
+HTTPS app. Federation remains opt-in through reviewed inputs; the production
+deployment enables the repository- and Environment-bound trust.
 
 GitHub repositories created after July 15, 2026 use immutable default OIDC
 subjects. The public, non-secret `github_repository_owner_id` and
@@ -237,8 +236,9 @@ established `jat060015f` suffix, the foundation names are
 [`state-bootstrap/README.md`](state-bootstrap/README.md) defines the separate
 one-time Standard LRS state foundation. It uses a private container, Entra data
 plane RBAC, shared keys disabled, TLS, versioning/change feed, soft deletion,
-and destroy guards. D19D did not create it. Backend values remain outside Git;
-never use a storage key, SAS token, or client secret.
+and destroy guards. The production stack uses this remote-state foundation.
+Backend values remain outside Git; never use a storage key, SAS token, or
+client secret.
 
 ## Static validation
 
@@ -250,7 +250,7 @@ PYTHONPATH=src python -m pytest -q tests/test_terraform_configuration.py
 git diff --check
 ```
 
-D19D validation ran `terraform init -backend=false -lockfile=readonly` and
-`terraform validate` for both roots against the pinned provider. Do not run
-backend initialization, `plan`, or `apply` until the D19E remote-state/bootstrap
-procedure is explicitly authorized.
+For source-only validation, use
+`terraform init -backend=false -lockfile=readonly` and `terraform validate`
+against the pinned provider. Run backend initialization, `plan`, or `apply`
+only as an explicitly reviewed and authorized infrastructure operation.
