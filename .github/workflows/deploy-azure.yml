@@ -395,7 +395,9 @@ jobs:
           for attempt in {1..30}; do
             running_state="$(az containerapp revision show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --revision "$NEW_REVISION" --query properties.runningState --output tsv)"
             health_state="$(az containerapp revision show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --revision "$NEW_REVISION" --query properties.healthState --output tsv)"
-            if [[ "$running_state" == "Running" && "$health_state" == "Healthy" ]]; then
+            if [[ "$health_state" == "Healthy" && \
+                  ( "$running_state" == "Running" || \
+                    "$running_state" == "RunningAtMaxScale" ) ]]; then
               break
             fi
             if [[ "$attempt" -eq 30 ]]; then

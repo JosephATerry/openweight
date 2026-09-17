@@ -721,6 +721,23 @@ def test_azure_manual_runtime_release_is_ci_verified_preloaded_and_dual_gated() 
     )
 
 
+def test_azure_revision_readiness_accepts_only_healthy_running_states() -> None:
+    configuration = azure_deploy_workflow()
+    deploy = configuration["jobs"]["deploy"]
+    steps = {step["name"]: step for step in deploy["steps"]}
+    commands = steps["Wait for the new revision and verify safe endpoints"]["run"]
+
+    assert '"$health_state" == "Healthy"' in commands
+    assert '"$running_state" == "Running"' in commands
+    assert '"$running_state" == "RunningAtMaxScale"' in commands
+    assert '"$running_state" == "Running" ||' in commands
+    assert '"$running_state" == "RunningAtMaxScale" )' in commands
+    assert '"$running_state" == "Failed"' not in commands
+    assert '"$running_state" == "Stopped"' not in commands
+    assert '"$running_state" == "Degraded"' not in commands
+    assert '"$running_state" == Running*' not in commands
+
+
 def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:
     configuration = azure_deploy_workflow()
     deploy = configuration["jobs"]["deploy"]
