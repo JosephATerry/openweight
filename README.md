@@ -1,56 +1,107 @@
 # OpenWeight
 
-## Enterprise LLM Governance Platform
-
-OpenWeight demonstrates how an enterprise AI system can answer questions from
-governed internal evidence and propose consequential actions without treating
-the language model as an authorization boundary.
+**A production-oriented governed AI platform that retrieves internal policy evidence, generates with GPT-OSS, and returns only strictly validated, cited answers.**
 
 **Designed and built by Joseph A. Terry.**
 
 [![CI](https://github.com/JosephATerry/openweight/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JosephATerry/openweight/actions/workflows/ci.yml)
+[![Azure CD](https://github.com/JosephATerry/openweight/actions/workflows/deploy-azure.yml/badge.svg?branch=main)](https://github.com/JosephATerry/openweight/actions/workflows/deploy-azure.yml)
 
-**[Open the live application](https://josephaterry-openweight.hf.space)** ·
-[Hugging Face Space](https://huggingface.co/spaces/josephaterry/openweight)
+### Live demos
+
+**[Live Azure Demo — primary production deployment](https://ca-owp-demo-api.bravetree-2ecd386c.centralus.azurecontainerapps.io)**
+
+**[Hugging Face Demo — alternate hosted walkthrough](https://josephaterry-openweight.hf.space)** ·
+[Space page](https://huggingface.co/spaces/josephaterry/openweight)
 
 ![OpenWeight Governance Workspace showing policy, access-request, and approval workflows](docs/assets/openweight-overview.png)
 
-## Why OpenWeight
+## Overview
 
-Enterprise AI has to do more than generate plausible text. It must show what
-evidence supports an answer, preserve policy scope, enforce authorization, and
-keep consequential changes under deterministic and human control.
+OpenWeight demonstrates how an AI application can answer questions from
+governed internal evidence without treating the language model as an
+authorization or trust boundary. It combines a React product interface,
+FastAPI service contracts, local Qwen retrieval embeddings, PostgreSQL/pgvector,
+remote GPT-OSS generation, strict citation validation, and controlled human
+approval workflows.
 
-OpenWeight brings those concerns into one product experience. It is not merely
-a RAG chatbot: it combines grounded policy assistance with a governed action
-workflow that separates what a model proposes from what the system permits and
-executes.
+The primary deployment runs on Azure Container Apps with a private Azure
+PostgreSQL Flexible Server. GPT-OSS inference is provided through Hugging Face
+Inference Providers and Groq; Azure hosts the application and retrieval stack,
+not the language model itself.
 
-## Core workflows
+## What it demonstrates
 
-### Policy & Evidence
+- **Grounded RAG:** local Qwen embeddings retrieve synthetic internal policy
+  evidence from PostgreSQL/pgvector before GPT-OSS generation.
+- **Fail-closed answers:** every citation must exactly match the retrieved
+  source allowlist; missing, unsupported, or fabricated citations are rejected.
+- **Bounded correction:** one evidence-bound corrective generation is allowed
+  after citation-contract failure, and it must pass the same strict validator.
+- **Governed actions:** model or employee proposals pass deterministic policy,
+  authorization, approval, and fixed-executor boundaries before any write.
+- **Production-oriented delivery:** tested containers, Terraform-managed Azure
+  infrastructure, GitHub OIDC, guarded releases, and immutable image digests.
+- **Least privilege:** the runtime identity can pull its image and read only the
+  exact application database-password and inference-token secrets it needs.
 
-```text
-employee question
-    -> semantic retrieval over internal policy evidence
-    -> GPT-OSS grounded generation
-    -> streamed final answer
-    -> validated citation IDs and supporting evidence
+## Architecture
+
+```mermaid
+flowchart TB
+    user["User"] --> ui["React OpenWeight UI"]
+
+    subgraph azure["Azure production application"]
+        ui --> api["FastAPI on Azure Container Apps"]
+        api --> qwen["Local Qwen3-Embedding-0.6B encoder"]
+        qwen --> pg["Private Azure PostgreSQL + pgvector"]
+        pg --> evidence["Retrieved policy evidence + exact citation IDs"]
+    end
+
+    evidence --> hf["Hugging Face Inference Providers"]
+    hf --> groq["Groq"]
+    groq --> gpt["GPT-OSS"]
+    gpt --> validation["Strict grounded-citation validation"]
+    validation --> response["Cited user-facing response"]
+    response --> ui
+
+    actions["GitHub Actions CI/CD"] -->|"OIDC + guarded release"| azure
+    terraform["Terraform"] -.->|"infrastructure ownership"| azure
+    acr["Azure Container Registry"] -.->|"immutable digest"| api
+    identity["Managed identity"] -.-> api
+    vault["Azure Key Vault"] -.->|"exact secret scopes"| identity
 ```
 
-Employees can ask free-form policy and access-governance questions. Relevant
-evidence is retrieved with Qwen embeddings and supplied to GPT-OSS 20B. The UI
-progressively renders only final-answer content, then presents validated
-citations and the evidence used by the answer. When the retrieved internal
-evidence is insufficient, OpenWeight abstains instead of silently answering
-from general model knowledge or falling back to web search.
+FastAPI remains the product and API boundary. An MCP interface exposes the same
+bounded services; it is not a parallel security system, database layer, or
+execution gateway.
+
+## How the RAG pipeline works
+
+1. The user asks a policy question in the React UI.
+2. The application embeds it with the pinned local
+   `Qwen/Qwen3-Embedding-0.6B` encoder.
+3. PostgreSQL/pgvector returns relevant internal-policy chunks and their exact
+   citation IDs.
+4. The evidence-bound prompt is sent through Hugging Face Inference Providers
+   to Groq-hosted GPT-OSS.
+5. OpenWeight extracts citations and requires every cited ID to belong to the
+   retrieved allowlist.
+6. A valid grounded answer and its supporting evidence are returned. Otherwise,
+   the system abstains or fails closed.
 
 ![OpenWeight Policy and Evidence workspace showing a GPT-OSS answer, validated citation IDs, and Supporting Evidence](docs/assets/openweight-policy-evidence.png)
 
-_A GPT-OSS 20B answer grounded in retrieved synthetic enterprise policy, with
-validated citation IDs and visible Supporting Evidence._
+_A GPT-OSS answer grounded in synthetic enterprise policy, with validated
+citation IDs and visible supporting evidence._
 
-### Governed Actions
+The browser receives only employee-facing final-answer content. Prompts,
+reasoning traces, control tokens, credentials, and retrieval internals are not
+streamed or written to application telemetry. Citation membership validation
+does not prove semantic entailment, so users should still review the cited
+passages.
+
+## Governed actions
 
 ```text
 model or employee proposal
@@ -61,178 +112,109 @@ model or employee proposal
     -> auditable result with replay protection
 ```
 
-OpenWeight demonstrates this boundary with access-request status changes. A
-proposal does not perform a write. Only an explicitly approved, allowlisted
-action can reach the fixed executor; rejection has no operational effect.
+A proposal never performs a write by itself. Only an explicitly approved,
+allowlisted action can reach the fixed executor; rejection has no operational
+effect. LangGraph provides the interruption/resume boundary, while PostgreSQL
+row locking, approval sessions, and a transactional execution ledger protect
+the narrowly defined database effect from replay.
 
 ![OpenWeight approval review showing a proposed access-request change awaiting explicit human authorization](docs/assets/openweight-governed-approval.png)
 
-## Try the live demo
+## Production Azure deployment
 
-Visit **[josephaterry-openweight.hf.space](https://josephaterry-openweight.hf.space)**.
+The verified production path uses:
 
-1. Open **Policy & Evidence** and ask: _“What policy evidence is required before
-   approving privileged access?”_
-2. Review the streamed answer, inline citations, and Supporting Evidence cards.
-3. Switch the **Demo Persona** to Operator and open **Access Requests**.
-4. Create a status-change proposal and confirm that no change has executed yet.
-5. Open **Approvals**, review the proposed transition, and explicitly approve or
-   reject it.
-6. Visit **System** for the runtime, MCP, security, and deployment view.
+- Azure Container Apps for the public React/FastAPI application;
+- Azure Container Registry for Linux/amd64 images pinned by immutable digest;
+- Azure PostgreSQL Flexible Server with pgvector on private networking;
+- Azure Key Vault and managed identities for secretless workload access;
+- Terraform for infrastructure, identities, network boundaries, and service
+  configuration;
+- a Qwen-preloaded runtime image so retrieval requires no model download at
+  application startup.
 
-The public application uses synthetic policy and access-governance data. Demo
-Persona changes the walkthrough interface only; it is not authentication. The
-public action and approval state is process-local and resets when the Space
-restarts.
-
-## Architecture
-
-```mermaid
-flowchart TB
-    browser["Employee browser<br/>React 19 + TypeScript"]
-    client["MCP-compatible client"] --> mcp["MCP surface<br/>7 bounded tools"]
-    browser --> api["OpenWeight<br/>FastAPI · typed and secured service boundary"]
-    mcp --> api
-
-    subgraph policy["Policy & Evidence"]
-        direction TB
-        retrieval["Semantic retrieval<br/>Qwen embeddings + policy index"]
-        gpt["GPT-OSS 20B<br/>grounded generation"]
-        answer["Streamed final answer<br/>validated citation IDs"]
-        retrieval --> gpt --> answer
-    end
-
-    subgraph actions["Governed Actions"]
-        direction TB
-        proposal["Action proposal"]
-        controls["Deterministic controls<br/>authorization + policy checks"]
-        approval["Explicit human approval"]
-        executor["Fixed controlled executor"]
-        state["Durable PostgreSQL<br/>or ephemeral public-demo state"]
-        proposal --> controls --> approval --> executor --> state
-    end
-
-    api --> retrieval
-    api --> proposal
-    api -.-> crosscut["Cross-cutting<br/>security + privacy-safe observability"]
-```
-
-FastAPI remains the normal product/API boundary. MCP is an additional
-interoperability surface over the same services; it is not a parallel agent,
-security system, database layer, or execution gateway.
-
-## Security invariant
-
-> **The model is not the security boundary.**
-
-```text
-model proposal
-    ↓
-deterministic validation / guardrails / policy checks
-    ↓
-explicit human approval
-    ↓
-controlled executor
-    ↓
-audit / observability
-```
-
-Model output cannot authorize itself. Backend policy and role checks remain
-authoritative, approval resumes only the already-fixed proposal, and the
-executor accepts one narrow parameterized mutation rather than arbitrary SQL,
-shell commands, tool names, or write payloads.
-
-## Grounded AI design
-
-- **Primary model:** `openai/gpt-oss-20b` is the default and reference
-  generation backend.
-- **Semantic retrieval:** `Qwen/Qwen3-Embedding-0.6B` retrieves from 12
-  synthetic policy documents. The portable public index contains 49 chunks
-  with 1,024-dimensional embeddings.
-- **Grounding boundary:** the generation prompt permits only supplied evidence,
-  preserves policy/domain scope, and requires citations adjacent to supported
-  claims.
-- **Safe streaming:** the browser receives only employee-facing final-answer
-  content. Prompts, chain-of-thought/reasoning, traces, control tokens, and
-  retrieval internals are not streamed.
-- **Abstention:** insufficient internal evidence produces a bounded abstention;
-  the public policy flow does not silently invoke Tavily, web search, or general
-  model knowledge.
-- **Evidence review:** citation IDs are validated against the retrieved evidence
-  set before citation controls and Supporting Evidence cards are rendered. This
-  verifies source-ID membership, not semantic entailment; users should still
-  review the cited passage.
-
-## Governed action design
-
-LangGraph supplies the interruption/resume boundary for human approval. The
-proposal records a fixed action before interruption, and the resume request
-cannot replace its arguments.
-
-In PostgreSQL mode, durable checkpoints and approval sessions are combined with
-row locking and a transactional execution ledger. An effect ID is claimed in
-the same transaction as the one controlled access-request status mutation and
-its stored result. This provides replay protection for that narrowly defined
-database effect; it is not a claim of universal distributed exactly-once
-execution.
-
-The public Space demonstrates the same proposal, approval, rejection, and
-controlled-execution semantics against synthetic process-local state. Its
-replay record and pending approvals reset on process restart; production
-durability is represented by the PostgreSQL architecture, not by the public
-demo sandbox.
-
-## Deployment postures
-
-| Posture | Inference and retrieval | Identity and state | Status |
-| --- | --- | --- | --- |
-| **Full local engineering** | Local GPT-OSS 20B; Qwen embeddings; PostgreSQL/pgvector policy store | Configurable JWT/RBAC; PostgreSQL checkpoints, approvals, and execution ledger | Implemented; local model execution requires suitable GPU resources and model artifacts |
-| **Public Hugging Face demo** | CPU-hosted React/FastAPI shell; remote GPT-OSS through Hugging Face Inference Providers and Groq; portable Qwen index | Simulated Demo Persona; synthetic process-local action/approval state | Live recruiter walkthrough; intentionally ephemeral and not a production identity system |
-| **Azure portfolio reference** | React/FastAPI on Container Apps; HF Inference Providers -> Groq -> GPT-OSS 20B; managed PostgreSQL/pgvector | Anonymous read/query only; Entra JWT required for proposals/approvals; managed identities and Key Vault | Terraform plus CI-gated OIDC deployment implementation; no Azure environment is deployed |
-
-The public profile performs no startup, background, warm-up, or health-check
-inference. Metered requests have a finite timeout, zero application retries,
-no provider fallback, conservative per-client rate limits, and a global
-concurrency limit.
-
-## Engineering highlights
-
-| Area | Implementation |
-| --- | --- |
-| Product UI | React 19, TypeScript, React Router, accessible responsive components, safe limited Markdown |
-| Service boundary | FastAPI, strict Pydantic contracts, sanitized errors, server-sent answer streaming |
-| AI and retrieval | GPT-OSS 20B, Qwen embeddings, PostgreSQL/pgvector, reproducible portable vector index |
-| Workflow control | LangGraph interruption, explicit approval, fixed executor, transactional replay protection |
-| Identity | Optional RS256 OIDC/JWT validation with Reader, Approver, and Operator permissions |
-| Interoperability | MCP 2026-07-28 using the official `mcp==2.1.1` SDK and seven bounded tools |
-| Observability | Structured JSON logs, Prometheus metrics, OpenTelemetry traces, privacy-safe request correlation |
-| Delivery | Multi-stage non-root Docker image, GitHub Actions CI, deterministic Space export, keyless deployment |
-| Cloud reference | Staged Terraform and Azure OIDC CD for Container Apps, PostgreSQL/pgvector, Key Vault, managed identities, and bounded observability |
+The runtime identity has only `AcrPull` plus secret-scoped access to the
+application database password and Hugging Face inference token. It has no
+database administrator, migration, indexing, registry-push, or broad Azure
+management privilege.
 
 ## CI/CD
 
 ```text
-push or pull request
-    -> model-free application tests
-    -> frontend typecheck, lint, tests, and production build
-    -> dependency audits and tracked-file secret scan
-    -> deterministic Space-export validation
-    -> container build and non-inference smoke tests
+push / pull request
+    -> model-free application and security tests
+    -> workflow and secret checks
+    -> frontend validation
+    -> container build and isolated smoke tests
 
-successful current main revision
-    -> GitHub Environment boundary
-    -> GitHub Actions OIDC
-    -> Hugging Face Trusted Publisher
-    -> short-lived repository-scoped deployment token
-    -> josephaterry/openweight rebuild
+explicit production release
+    -> successful exact-SHA CI required
+    -> protected build + deploy gates
+    -> GitHub OIDC to Azure
+    -> ACR data-plane publication
+    -> Qwen-enabled Linux/amd64 build
+    -> immutable digest deployment
+    -> Container Apps revision + endpoint verification
 ```
 
-Pull requests never deploy. The deployment workflow rechecks that the tested
-commit is still current `main`, serializes releases, and receives no Space
-runtime inference secret. GitHub stores no long-lived Hugging Face deployment
-token.
+No long-lived Azure CI credential is stored in GitHub. Default and automatic
+builds remain model-free; a Qwen-enabled production artifact requires explicit
+manual intent and both environment gates. The workflow verifies current `main`,
+captures the pushed digest, deploys that digest rather than a mutable tag, and
+fails closed before Azure login when authorization is disabled.
 
-## Run locally
+Hugging Face deployment remains a separate Trusted Publishing path with no
+long-lived Space deployment token stored in GitHub.
+
+## Security and grounding
+
+> **The model is not the security boundary.**
+
+- Retrieved citation IDs form an exact allowlist.
+- Unsupported or fabricated citations are never rewritten into allowed IDs.
+- At most one corrective generation may reuse the same evidence; its result
+  must pass the original validator.
+- Insufficient evidence produces a bounded abstention rather than unsupported
+  general knowledge or silent web-search fallback.
+- Consequential actions require deterministic backend checks and explicit human
+  approval.
+- Public data is synthetic, and telemetry excludes prompts, generated answers,
+  retrieved document text, credentials, database URLs, and personal data.
+- The service supports bounded OIDC/JWT roles; a demo persona is never treated
+  as an authentication assertion.
+
+## Tech stack
+
+| Area | Technology |
+| --- | --- |
+| Product UI | React 19, TypeScript, React Router, accessible responsive components |
+| API | FastAPI, Pydantic, server-sent events, sanitized error contracts |
+| Retrieval | Qwen3-Embedding-0.6B, PostgreSQL, pgvector, 1,024-dimensional vectors |
+| Generation | Hugging Face Inference Providers → Groq → GPT-OSS 20B |
+| Workflow control | LangGraph interruption, explicit approval, fixed executor |
+| Cloud | Azure Container Apps, ACR, PostgreSQL Flexible Server, Key Vault, managed identities |
+| Delivery | Terraform, Docker, GitHub Actions, GitHub OIDC, immutable digests |
+| Interoperability | MCP using the official Python SDK and seven bounded tools |
+| Observability | Structured logs, Prometheus metrics, OpenTelemetry traces |
+
+## Testing and quality
+
+The real delivery path validates model-free application behavior, grounded-RAG
+contracts, authorization boundaries, workflow semantics, dependency
+consistency, tracked-file secrets, frontend quality, container construction,
+and isolated endpoint smoke tests. Production verification has also confirmed:
+
+- a healthy Azure Container Apps revision;
+- HTTP 200 from `/healthz` and ready status from `/readyz`;
+- PostgreSQL and pgvector retrieval readiness;
+- a working public frontend;
+- a full Qwen retrieval → GPT-OSS generation → supported-citation response;
+- least-privilege runtime access; and
+- Terraform/CD ownership that permits CD to manage only the runtime image.
+
+No load, scale, SLA, or comparative model-performance claim is made.
+
+## Running locally
 
 The quickest non-inference product/container check uses Docker Compose:
 
@@ -247,32 +229,47 @@ Then open `http://127.0.0.1:8000/`. See the
 cleanup.
 
 The complete local Policy & Evidence path additionally requires PostgreSQL
-policy indexing, the pinned Qwen embedding model, local GPT-OSS 20B model
-artifacts, and suitable GPU capacity. It is deliberately not presented as a
-lightweight quickstart. See the [service API guide](docs/service_api.md) and
-[frontend guide](docs/frontend.md) for the application boundaries and
-development workflow.
+policy indexing, the pinned Qwen embedding model, local GPT-OSS 20B artifacts,
+and suitable GPU capacity. It is intentionally not presented as a lightweight
+quickstart. See the [service API guide](docs/service_api.md) and
+[frontend guide](docs/frontend.md) for development details.
 
-## Security, privacy, and limitations
+## Repository structure
 
-- All data visible in the public demo is synthetic; public action and approval
-  state is ephemeral.
-- Demo Persona is a role-oriented UI simulation, not production authentication
-  or an authorization boundary.
-- The full service supports bounded OIDC/JWT roles, but enterprise identity is
-  not enabled in the public Space.
-- OpenWeight does not currently claim document-level access-control filtering
-  within the policy corpus.
-- Citation-ID validation confirms that a cited chunk was retrieved; it does not
-  prove that every generated claim semantically follows from that chunk.
-- Consequential actions require deterministic controls outside the model and
-  are limited to the fixed access-request workflow.
-- The public policy flow does not silently fall back to Tavily, web search, or
-  unsupported general knowledge.
-- Prompts, model responses, reasoning, retrieved document text, credentials,
-  database URLs, and personal data are excluded from application telemetry.
-- The public Space is a bounded recruiter demo, not the Azure production
-  architecture. No Azure environment is currently deployed.
+```text
+src/openweight_platform/   FastAPI, RAG, security, orchestration, and services
+frontend/                  React/TypeScript application
+infra/terraform/           Staged Azure infrastructure and lifecycle
+deploy/huggingface/        Deterministic Hugging Face Space export
+docker/                    API and PostgreSQL container support
+scripts/                   Migration, indexing, export, and operational tools
+tests/                     Application, security, workflow, and infrastructure tests
+docs/                      Architecture, API, security, deployment, and UX guides
+```
+
+## Deployment options
+
+| Posture | Inference and retrieval | Purpose |
+| --- | --- | --- |
+| **Azure production** | Local Qwen encoder; private PostgreSQL/pgvector; HF Inference Providers → Groq → GPT-OSS | Primary live deployment and validated production E2E |
+| **Hugging Face Space** | Hosted React/FastAPI demo; remote GPT-OSS; portable synthetic retrieval profile | Alternate recruiter walkthrough with intentionally ephemeral demo state |
+| **Local engineering** | Local Qwen and GPT-OSS artifacts; PostgreSQL/pgvector | Full development path for appropriately provisioned hardware |
+
+Try the alternate **[Hugging Face demo](https://josephaterry-openweight.hf.space)**
+to explore Policy & Evidence, demo-persona access requests, explicit approvals,
+and the System view. Demo Persona changes the walkthrough interface only; it
+is not authentication, and process-local demo action state resets on restart.
+
+## Project status
+
+**Production deployment and essential E2E verification are complete.** The
+Azure application, real CI/CD path, private database retrieval, Qwen encoder,
+GPT-OSS inference, strict citation validation, public frontend, and runtime
+least-privilege boundaries have all been exercised successfully.
+
+The project uses synthetic policy and access-governance data. It does not claim
+document-level corpus authorization, production load testing, availability
+SLAs, or universal exactly-once execution.
 
 ## Documentation
 
@@ -282,25 +279,23 @@ development workflow.
 - [Authentication, authorization, and security](docs/security.md)
 - [Model Context Protocol interface](docs/mcp.md)
 - [Logs, metrics, traces, and privacy](docs/observability.md)
-- [Hugging Face recruiter-demo profile](docs/huggingface.md)
-- [Public CI/CD and Trusted Publishing](docs/ci_cd.md)
+- [Hugging Face deployment](docs/huggingface.md)
+- [CI/CD](docs/ci_cd.md)
 - [Local containers](docs/containers.md)
-- [Azure reference architecture](docs/azure_architecture.md)
+- [Azure architecture](docs/azure_architecture.md)
 - [Terraform Azure implementation](infra/terraform/README.md)
 
 ## Experimental model engineering
 
 Muse Glimmer remains an experimental backend and training-engineering case
-study. It is not the default production/reference model, has not replaced
-GPT-OSS, and is not presented here with comparative model-performance claims.
+study. It is not the production/reference model, has not replaced GPT-OSS, and
+is not presented with comparative model-performance claims.
 
-## Author
+## Author and license
 
 **Designed and built by Joseph A. Terry.**
 
 - GitHub: [JosephATerry](https://github.com/JosephATerry)
 - Hugging Face: [josephaterry](https://huggingface.co/josephaterry)
-
----
 
 © 2026 Joseph A. Terry. All rights reserved.
