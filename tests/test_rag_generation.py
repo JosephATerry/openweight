@@ -1,3 +1,6 @@
+import logging
+
+import pytest
 from langchain_core.documents import Document
 
 from openweight_platform.backends.base import (
@@ -67,6 +70,22 @@ class FakeGroundedBackend(ModelBackend):
 
     def unload(self):
         pass
+
+
+class FakeSequenceBackend(FakeGroundedBackend):
+    def __init__(self, answers):
+        super().__init__(answer="")
+        self.answers = iter(answers)
+
+    def generate(self, prompt):
+        self.prompts.append(prompt)
+        return GenerationResult(
+            text=next(self.answers),
+            input_tokens=10,
+            output_tokens=5,
+            generation_seconds=0.25,
+            peak_vram_gib=1.0,
+        )
 
 
 def test_citation_id_is_stable_and_uses_policy_metadata():
@@ -279,3 +298,96 @@ def test_grounded_generation_maps_exact_model_insufficiency_sentinel() -> None:
     assert result.cited_source_ids == []
     assert result.citation_valid is False
     assert chunks == []
+
+
+@pytest.mark.parametrize(
+    "first_answer, expected_event",
+    [
+        (
+            "Approval is required, but this draft has no citation.",
+            "grounded_citation_validation_failed_missing",
+        ),
+        (
+            "Approval is required [EPG-FABRICATED-999#0].",
+            "grounded_citation_validation_failed_unsupported",
+        ),
+    ],
+)
+def test_invalid_first_draft_gets_one_strict_corrective_retry(
+    first_answer,
+    expected_event,
+    caplog,
+):
+    backend = FakeSequenceBackend(
+        [
+            first_answer,
+            "Approval is required [EPG-ACCESS-001#0].",
+        ]
+    )
+    caplog.set_level(logging.INFO, logger="openweight_platform.rag.generation")
+
+    result = generate_grounded_answer(
+        "What controls privileged access?",
+        FakeSemanticStore([make_document()]),
+        backend,
+    )
+
+    assert len(backend.prompts) == 2
+    assert "Corrective regeneration required" in backend.prompts[1]
+    assert "[EPG-ACCESS-001#0]" in backend.prompts[1]
+    assert result.answer == "Approval is required [EPG-ACCESS-001#0]."
+    assert result.cited_source_ids == ["[EPG-ACCESS-001#0]"]
+    assert result.citation_valid is True
+    assert "EPG-FABRICATED-999" not in result.answer
+    assert expected_event in caplog.messages
+    assert "grounded_citation_corrective_retry_attempted" in caplog.messages
+    assert "grounded_citation_corrective_retry_succeeded" in caplog.messages
+
+
+def test_invalid_corrective_retry_remains_fail_closed_and_is_not_retried_again(
+    caplog,
+):
+    sensitive_answer_marker = "private_answer_marker_must_not_be_logged"
+    evidence_marker = "private_evidence_marker_must_not_be_logged"
+    backend = FakeSequenceBackend(
+        [
+            f"{sensitive_answer_marker} [EPG-FABRICATED-999#0].",
+            "Still unsupported [EPG-FABRICATED-998#0].",
+        ]
+    )
+    caplog.set_level(logging.INFO, logger="openweight_platform.rag.generation")
+
+    result = generate_grounded_answer(
+        "What controls privileged access?",
+        FakeSemanticStore([make_document(content=evidence_marker)]),
+        backend,
+    )
+
+    assert len(backend.prompts) == 2
+    assert result.citation_valid is False
+    assert result.cited_source_ids == ["[EPG-FABRICATED-998#0]"]
+    assert "grounded_citation_corrective_retry_failed_unsupported" in caplog.messages
+    assert sensitive_answer_marker not in caplog.text
+    assert evidence_marker not in caplog.text
+    assert "What controls privileged access?" not in caplog.text
+
+
+def test_corrective_retry_preserves_insufficiency_sentinel_behavior():
+    backend = FakeSequenceBackend(
+        [
+            "This draft omitted its citation.",
+            INSUFFICIENT_EVIDENCE_SENTINEL,
+        ]
+    )
+
+    result = generate_grounded_answer(
+        "What unsupported requirement applies?",
+        FakeSemanticStore([make_document()]),
+        backend,
+    )
+
+    assert len(backend.prompts) == 2
+    assert result.answer == INSUFFICIENT_EVIDENCE_MESSAGE
+    assert result.evidence_sufficient is False
+    assert result.cited_source_ids == []
+    assert result.citation_valid is False

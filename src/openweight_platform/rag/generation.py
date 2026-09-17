@@ -1,12 +1,13 @@
 """Grounded answer generation from retrieved enterprise policy evidence."""
 
+import logging
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from langchain_core.documents import Document
 
-from openweight_platform.backends.base import ModelBackend
+from openweight_platform.backends.base import GenerationResult, ModelBackend
 from openweight_platform.rag.retrieval import (
     SemanticStore,
     search_policy_corpus,
@@ -19,6 +20,7 @@ INSUFFICIENT_EVIDENCE_MESSAGE = (
     "this question confidently."
 )
 INSUFFICIENT_EVIDENCE_SENTINEL = "INSUFFICIENT_INTERNAL_POLICY_EVIDENCE"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,23 @@ END RETRIEVED EVIDENCE
 Grounded answer:"""
 
 
+def _build_corrective_prompt_from_sources(
+    question: str,
+    sources: Sequence[RetrievedSource],
+) -> str:
+    allowed = ", ".join(source.citation_id for source in sources)
+    return f"""Corrective regeneration required.
+The previous draft was rejected because its citations did not satisfy the
+grounded-answer contract. Generate a new answer from scratch. Do not repair,
+reinterpret, or repeat any citation from the previous draft.
+The only permitted citation IDs are exactly: {allowed}
+Use at least one permitted ID when evidence supports an answer. Copy permitted
+IDs exactly, including square brackets. If the evidence is insufficient, use
+the required insufficiency sentinel instead.
+
+{_build_prompt_from_sources(question, sources)}"""
+
+
 def build_grounded_prompt(
     question: str,
     documents: Sequence[Document],
@@ -187,6 +206,32 @@ def validate_answer_citations(
     )
 
 
+def _citation_failure(
+    cited_source_ids: Sequence[str],
+    supplied_source_ids: Sequence[str],
+) -> str | None:
+    if not cited_source_ids:
+        return "missing"
+    supplied = set(supplied_source_ids)
+    if any(citation_id not in supplied for citation_id in cited_source_ids):
+        return "unsupported"
+    return None
+
+
+def _generate_attempt(
+    prompt: str,
+    backend: ModelBackend,
+    on_text: Callable[[str], None] | None,
+) -> tuple[GenerationResult, str, list[str], bool]:
+    streamed_text = _InsufficiencyAwareStream(on_text)
+    generation = backend.generate_stream(prompt, streamed_text.feed)
+    insufficient = generation.text.strip() == INSUFFICIENT_EVIDENCE_SENTINEL
+    streamed_text.finish(insufficient=insufficient)
+    answer = INSUFFICIENT_EVIDENCE_MESSAGE if insufficient else generation.text
+    cited_source_ids = [] if insufficient else extract_citation_ids(answer)
+    return generation, answer, cited_source_ids, insufficient
+
+
 def generate_grounded_answer(
     question: str,
     vector_store: SemanticStore,
@@ -224,29 +269,56 @@ def generate_grounded_answer(
         )
     if on_stage is not None:
         on_stage("generating")
-    prompt = _build_prompt_from_sources(question, sources)
-    streamed_text = _InsufficiencyAwareStream(on_text)
-    generation = backend.generate_stream(prompt, streamed_text.feed)
-    insufficient = generation.text.strip() == INSUFFICIENT_EVIDENCE_SENTINEL
-    streamed_text.finish(insufficient=insufficient)
-    answer = INSUFFICIENT_EVIDENCE_MESSAGE if insufficient else generation.text
-    cited_source_ids = [] if insufficient else extract_citation_ids(answer)
     supplied_source_ids = [source.citation_id for source in sources]
+    generation, answer, cited_source_ids, insufficient = _generate_attempt(
+        _build_prompt_from_sources(question, sources),
+        backend,
+        on_text,
+    )
+    generations = [generation]
+
+    failure = (
+        None
+        if insufficient
+        else _citation_failure(cited_source_ids, supplied_source_ids)
+    )
+    if failure is not None:
+        LOGGER.warning("grounded_citation_validation_failed_%s", failure)
+        LOGGER.warning("grounded_citation_corrective_retry_attempted")
+        generation, answer, cited_source_ids, insufficient = _generate_attempt(
+            _build_corrective_prompt_from_sources(question, sources),
+            backend,
+            None,
+        )
+        generations.append(generation)
+        retry_failure = (
+            None
+            if insufficient
+            else _citation_failure(cited_source_ids, supplied_source_ids)
+        )
+        if retry_failure is None:
+            LOGGER.warning("grounded_citation_corrective_retry_succeeded")
+        else:
+            LOGGER.warning(
+                "grounded_citation_corrective_retry_failed_%s",
+                retry_failure,
+            )
 
     return GroundedAnswerResult(
         question=question,
         answer=answer,
         retrieved_sources=sources,
         cited_source_ids=cited_source_ids,
-        citation_valid=validate_citation_ids(
-            cited_source_ids,
-            supplied_source_ids,
+        citation_valid=(
+            False
+            if insufficient
+            else validate_citation_ids(cited_source_ids, supplied_source_ids)
         ),
         evidence_sufficient=not insufficient,
-        input_tokens=generation.input_tokens,
-        output_tokens=generation.output_tokens,
-        generation_seconds=generation.generation_seconds,
-        peak_vram_gib=generation.peak_vram_gib,
+        input_tokens=sum(item.input_tokens for item in generations),
+        output_tokens=sum(item.output_tokens for item in generations),
+        generation_seconds=sum(item.generation_seconds for item in generations),
+        peak_vram_gib=max(item.peak_vram_gib for item in generations),
     )
 
 
