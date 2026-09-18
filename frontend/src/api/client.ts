@@ -131,6 +131,27 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
+async function statusGet<T>(
+  path: string,
+  signal: AbortSignal | undefined,
+  acceptedStatuses: readonly number[] = [],
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${configuredBaseUrl()}${path}`, { signal });
+  } catch (reason) {
+    if (reason instanceof DOMException && reason.name === "AbortError") throw reason;
+    reportBackendUnavailable(0);
+    throw new ApiError(0, "network_error", "The service could not be reached.");
+  }
+
+  if (!response.ok && !acceptedStatuses.includes(response.status)) {
+    reportBackendUnavailable(response.status);
+    throw await apiError(response);
+  }
+  return (await response.json()) as T;
+}
+
 async function streamPolicy(
   question: string,
   handlers: PolicyStreamHandlers,
@@ -226,9 +247,9 @@ async function streamPolicy(
 
 export const api = {
   health: (signal?: AbortSignal) =>
-    request<HealthResponse>("/healthz", { signal }),
+    statusGet<HealthResponse>("/healthz", signal),
   readiness: (signal?: AbortSignal) =>
-    request<ReadinessResponse>("/readyz", { signal }, [503]),
+    statusGet<ReadinessResponse>("/readyz", signal, [503]),
   serviceInfo: (signal?: AbortSignal) =>
     request<ServiceInfoResponse>("/v1/service-info", { signal }),
   query: (question: string, signal?: AbortSignal) =>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import threading
 import time
@@ -28,6 +29,7 @@ from openweight_platform.api.errors import (
     StateConflictError,
     UnsafeResultError,
 )
+from openweight_platform.api.logging import ACCESS_LOGGER_NAME
 from openweight_platform.api.observability import Observability, elapsed_seconds
 from openweight_platform.backends.base import GenerationResult, ModelBackend
 from openweight_platform.operations.models import AccessRequest
@@ -63,6 +65,7 @@ InferenceState = Literal[
     "unavailable",
 ]
 PolicyWarmupState = Literal["not_started", "initializing", "ready", "failed"]
+POLICY_WARMUP_LOGGER = logging.getLogger(ACCESS_LOGGER_NAME)
 FORBIDDEN_PUBLIC_KEYS = frozenset(
     {
         "analysis",
@@ -825,12 +828,33 @@ class DefaultPlatformRuntime:
             if self._policy_warmup_state == "failed":
                 return False
             self._policy_warmup_state = "initializing"
+            started = time.perf_counter()
+            POLICY_WARMUP_LOGGER.info(
+                "policy_encoder_warmup_started",
+                extra={"dependency": "retrieval_encoder", "result": "started"},
+            )
             try:
                 self._policy.warmup()
             except Exception:
                 self._policy_warmup_state = "failed"
+                POLICY_WARMUP_LOGGER.info(
+                    "policy_encoder_warmup_failed",
+                    extra={
+                        "dependency": "retrieval_encoder",
+                        "result": "failed",
+                        "latency_ms": round(elapsed_seconds(started) * 1_000, 3),
+                    },
+                )
                 return False
             self._policy_warmup_state = "ready"
+            POLICY_WARMUP_LOGGER.info(
+                "policy_encoder_warmup_completed",
+                extra={
+                    "dependency": "retrieval_encoder",
+                    "result": "success",
+                    "latency_ms": round(elapsed_seconds(started) * 1_000, 3),
+                },
+            )
             return True
 
     def _readiness(self) -> list[DependencyStatus]:
