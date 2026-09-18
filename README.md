@@ -52,7 +52,7 @@ flowchart TB
     user["User"] --> ui["React OpenWeight UI"]
 
     subgraph azure["Azure production application"]
-        ui --> api["FastAPI on Azure Container Apps"]
+        ui["React on Azure static hosting"] -->|"wake + API"| api["FastAPI on Azure Container Apps"]
         api --> qwen["Local Qwen3-Embedding-0.6B encoder"]
         qwen --> pg["Private Azure PostgreSQL + pgvector"]
         pg --> evidence["Retrieved policy evidence + exact citation IDs"]
@@ -124,7 +124,9 @@ the narrowly defined database effect from replay.
 
 The verified production path uses:
 
-- Azure Container Apps for the public React/FastAPI application;
+- Azure Storage static website hosting for an immediately available React UI
+  while the Container Apps backend retains scale-to-zero;
+- Azure Container Apps for the public FastAPI/Qwen backend;
 - Azure Container Registry for Linux/amd64 images pinned by immutable digest;
 - Azure PostgreSQL Flexible Server with pgvector on private networking;
 - Azure Key Vault and managed identities for secretless workload access;
@@ -192,7 +194,7 @@ long-lived Space deployment token stored in GitHub.
 | Retrieval | Qwen3-Embedding-0.6B, PostgreSQL, pgvector, 1,024-dimensional vectors |
 | Generation | Hugging Face Inference Providers → Groq → GPT-OSS 20B |
 | Workflow control | LangGraph interruption, explicit approval, fixed executor |
-| Cloud | Azure Container Apps, ACR, PostgreSQL Flexible Server, Key Vault, managed identities |
+| Cloud | Azure static hosting, Container Apps, ACR, PostgreSQL Flexible Server, Key Vault, managed identities |
 | Delivery | Terraform, Docker, GitHub Actions, GitHub OIDC, immutable digests |
 | Interoperability | MCP using the official Python SDK and seven bounded tools |
 | Observability | Structured logs, Prometheus metrics, OpenTelemetry traces |

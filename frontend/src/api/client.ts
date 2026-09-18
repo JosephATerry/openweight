@@ -32,6 +32,18 @@ const ERROR_MESSAGES: Record<number, string> = {
 };
 
 let sessionAccessToken: string | null = null;
+const unavailableListeners = new Set<() => void>();
+
+export function subscribeBackendUnavailable(listener: () => void): () => void {
+  unavailableListeners.add(listener);
+  return () => unavailableListeners.delete(listener);
+}
+
+function reportBackendUnavailable(status: number): void {
+  if (status === 0 || status === 502 || status === 503 || status === 504) {
+    unavailableListeners.forEach((listener) => listener());
+  }
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -90,7 +102,11 @@ async function apiError(response: Response): Promise<ApiError> {
   );
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestOptions = {},
+  acceptedStatuses: readonly number[] = [],
+): Promise<T> {
   const headers = requestHeaders("application/json", options.body !== undefined);
   new Headers(options.headers).forEach((value, key) => headers.set(key, value));
 
@@ -103,10 +119,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
   } catch {
+    reportBackendUnavailable(0);
     throw new ApiError(0, "network_error", "The service could not be reached.");
   }
 
-  if (!response.ok) {
+  if (!response.ok && !acceptedStatuses.includes(response.status)) {
+    reportBackendUnavailable(response.status);
     throw await apiError(response);
   }
 
@@ -129,9 +147,13 @@ async function streamPolicy(
     });
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === "AbortError") throw reason;
+    reportBackendUnavailable(0);
     throw new ApiError(0, "network_error", "The service could not be reached.");
   }
-  if (!response.ok) throw await apiError(response);
+  if (!response.ok) {
+    reportBackendUnavailable(response.status);
+    throw await apiError(response);
+  }
   if (!response.body) {
     throw new ApiError(0, "stream_unavailable", "The response stream is unavailable.");
   }
@@ -167,6 +189,7 @@ async function streamPolicy(
       const status = code === "public_demo_busy"
         ? 429
         : code === "dependency_unavailable" ? 503 : 500;
+      reportBackendUnavailable(status);
       throw new ApiError(
         status,
         code,
@@ -205,7 +228,7 @@ export const api = {
   health: (signal?: AbortSignal) =>
     request<HealthResponse>("/healthz", { signal }),
   readiness: (signal?: AbortSignal) =>
-    request<ReadinessResponse>("/readyz", { signal }),
+    request<ReadinessResponse>("/readyz", { signal }, [503]),
   serviceInfo: (signal?: AbortSignal) =>
     request<ServiceInfoResponse>("/v1/service-info", { signal }),
   query: (question: string, signal?: AbortSignal) =>

@@ -71,7 +71,11 @@ with the frontend server disabled (the default in `.env.example`).
 Only public browser configuration belongs in Vite variables:
 
 - `VITE_API_BASE_URL` optionally supplies a credential-free HTTP(S) API base
-  URL. Same-origin is the default and the production recommendation.
+  URL. Same-origin remains the combined-container default; the Azure static
+  build sets this to the public Container Apps backend origin.
+- `VITE_STATIC_HOSTING=true` selects hash-based SPA routing for Azure Storage
+  static website hosting. `VITE_COLD_START_GATE=true` enables the Azure
+  availability gate; neither setting contains a secret.
 - `VITE_DEMO_MODE=true` shows the explicitly labelled Demo Persona selector. It
   changes interface affordances only and never grants server permissions.
   In authenticated deployments, the server still validates every bearer token
@@ -106,7 +110,8 @@ a model or contact an identity provider.
 
 ## Production and container delivery
 
-The Dockerfile is a multi-stage build:
+The Dockerfile retains the combined deployment used by local Compose and the
+alternate Hugging Face Space:
 
 ```text
 locked Node builder -> frontend/dist -> non-root Python runtime
@@ -119,6 +124,14 @@ Compose. Compose and the recruiter-facing Azure/Hugging Face workflows supply
 the intentional public build argument `VITE_DEMO_MODE=true`; other builds retain
 the Dockerfile's safe `false` default. Native API/test startup leaves static
 delivery disabled unless explicitly set.
+
+Azure production additionally builds the same React source as an independent
+static site. It renders immediately while Container Apps remains scaled to
+zero, sends one bounded `/healthz` wake request, then polls `/readyz` serially
+with bounded backoff. The UI reports only real states, times out safely, and
+offers an explicit retry. API-dependent pages mount only after readiness;
+failed user requests are never replayed automatically. The static build uses
+hash routing and the configured Container Apps HTTPS origin.
 
 FastAPI registers only the known SPA locations and `/assets`. It does not use
 a generic catch-all, so `/mcp`, `/v1/*`, `/healthz`, `/readyz`, `/metrics`,

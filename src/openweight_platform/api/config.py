@@ -198,6 +198,7 @@ class ServiceSettings:
     otlp_endpoint: str | None = field(repr=False)
     auth_enabled: bool = False
     public_read_enabled: bool = False
+    cors_allowed_origins: tuple[str, ...] = ()
     auth_issuer: str | None = None
     auth_audience: str | None = None
     auth_jwks_url: str | None = field(default=None, repr=False)
@@ -319,6 +320,28 @@ class ServiceSettings:
             "OPENWEIGHT_PUBLIC_READ_ENABLED",
             False,
         )
+        cors_allowed_origins: list[str] = []
+        for origin in values.get("OPENWEIGHT_CORS_ALLOWED_ORIGINS", "").split(","):
+            candidate = origin.strip()
+            if not candidate:
+                continue
+            parsed_origin = urlsplit(candidate)
+            if (
+                parsed_origin.scheme not in {"http", "https"}
+                or not parsed_origin.hostname
+                or parsed_origin.username is not None
+                or parsed_origin.password is not None
+                or parsed_origin.path not in ("", "/")
+                or parsed_origin.query
+                or parsed_origin.fragment
+                or "*" in candidate
+            ):
+                raise ValueError(
+                    "OPENWEIGHT_CORS_ALLOWED_ORIGINS must contain exact HTTP(S) origins"
+                )
+            normalized = f"{parsed_origin.scheme}://{parsed_origin.netloc.lower()}"
+            if normalized not in cors_allowed_origins:
+                cors_allowed_origins.append(normalized)
         auth_issuer = _optional_text(values, "OPENWEIGHT_AUTH_ISSUER")
         auth_audience = _optional_text(values, "OPENWEIGHT_AUTH_AUDIENCE")
         auth_jwks_url = _optional_text(values, "OPENWEIGHT_AUTH_JWKS_URL")
@@ -701,6 +724,7 @@ class ServiceSettings:
             otlp_endpoint=otlp_endpoint,
             auth_enabled=auth_enabled,
             public_read_enabled=public_read_enabled,
+            cors_allowed_origins=tuple(cors_allowed_origins),
             auth_issuer=auth_issuer,
             auth_audience=auth_audience,
             auth_jwks_url=auth_jwks_url,

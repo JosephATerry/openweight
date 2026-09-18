@@ -18,8 +18,10 @@ audit state remain authoritative.
 
 ```mermaid
 flowchart LR
-    recruiter[Public recruiter] -->|managed HTTPS| app[Container Apps Consumption\nReact + FastAPI]
+    recruiter[Public recruiter] -->|managed HTTPS| static[Storage static website\nReact]
+    static -->|wake + API requests| app[Container Apps Consumption\nFastAPI + Qwen]
     entra[Entra-authenticated operator] -->|bearer token| app
+    ci[GitHub Actions OIDC] -->|scoped static upload| static
     acr[Standard ACR\nimmutable digest] -->|managed identity pull| app
     app -->|secret refs via managed identity| kv[Key Vault]
     app -->|TLS on delegated subnet| pg[(PostgreSQL Flexible Server\nB1ms / 32 GiB / pgvector)]
@@ -28,7 +30,12 @@ flowchart LR
     hf -->|provider: Groq| model[openai/gpt-oss-20b]
 ```
 
-The one CPU application container serves the compiled frontend and FastAPI.
+Azure serves React independently from a dedicated StorageV2 static website;
+the one CPU application container serves FastAPI and the Qwen retrieval
+encoder. Container Apps retains `minReplicas=0`, so backend compute still has a
+real cold start while the lightweight preparation UI remains available. The
+combined React/FastAPI image remains compatible with the alternate Hugging
+Face deployment.
 GPT-OSS weights never enter Azure. There is no Azure model service, accelerator,
 GPU profile, CUDA image, model-weight disk, AKS, API Management, Front Door,
 Application Gateway, NAT Gateway, Redis, or private endpoint.
@@ -36,7 +43,9 @@ Application Gateway, NAT Gateway, Redis, or private endpoint.
 The Qwen query encoder remains the existing CPU retrieval component. Its pinned
 public files are preloaded during image construction, and the explicit one-off
 policy indexing job populates PostgreSQL. It is not GPT-OSS generation and is
-never invoked by deployment verification, `/healthz`, or `/readyz`.
+never invoked by `/healthz`; readiness never invokes GPT-OSS. Azure startup
+warms it once in the background, and `/readyz` remains false until that warm-up
+and the existing database/index checks succeed.
 
 ## Public demo versus production identity
 

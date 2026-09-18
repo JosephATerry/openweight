@@ -2,8 +2,9 @@
 
 This root manages the live Azure production infrastructure for OpenWeight.
 Terraform owns the foundation, network, identities, RBAC, managed database,
-Key Vault, and Container Apps configuration. Guarded application CD owns only
-the immutable runtime image field declared in the Container App lifecycle.
+Key Vault, Container Apps configuration, and the dedicated static frontend
+account. Guarded application CD owns the immutable runtime image field and the
+contents of the Terraform-created `$web` container.
 
 ## Final architecture
 
@@ -11,8 +12,9 @@ Terraform defines a resource group, VNet, Container Apps infrastructure subnet,
 private delegated PostgreSQL subnet and private DNS, Standard ACR, Container
 Apps Consumption environment, PostgreSQL Flexible Server, Key Vault, bounded
 Log Analytics, separate runtime/migration/indexing/CI identities, narrow RBAC,
-optional GitHub OIDC federation bound to an Environment, manual jobs, and the public
-HTTPS app. Federation remains opt-in through reviewed inputs; the production
+optional GitHub OIDC federation bound to an Environment, manual jobs, a public
+HTTPS backend, and an independently available StorageV2 static website.
+Federation remains opt-in through reviewed inputs; the production
 deployment enables the repository- and Environment-bound trust.
 
 GitHub repositories created after July 15, 2026 use immutable default OIDC
@@ -188,7 +190,11 @@ exit code zero and a valid AzureRM schema; do not retry automatically on failure
 
 An empty `container_app_allowed_ingress_cidrs` list exposes Container Apps'
 managed HTTPS hostname publicly. Optional restricted CIDRs remain supported.
-The compiled React frontend is enabled.
+The Azure React build is published separately to the dedicated static website,
+while the compiled frontend remains in the application image for Hugging Face
+and combined-container compatibility. The backend keeps `minReplicas=0` and
+accepts browser API requests only from the exact Terraform-derived static-site
+origin. CORS is transport policy, not authorization.
 
 The Azure profile requires Entra authentication configuration and separately
 enables anonymous read/query access. Anonymous recruiters may view service

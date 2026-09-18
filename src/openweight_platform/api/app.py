@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -13,6 +14,7 @@ from fastapi import Depends, FastAPI, Header, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from mcp.server import MCPServer
+from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.routing import Match
 
@@ -203,12 +205,19 @@ def create_app(
             service_settings,
             observability=telemetry,
         )
+        warmup_task: asyncio.Task[bool] | None = None
+        if runtime is None and service_settings.deployment_profile == "azure":
+            warmup_task = asyncio.create_task(
+                application.state.runtime.warm_policy_retrieval()
+            )
         async with AsyncExitStack() as stack:
             if mcp_server is not None:
                 await stack.enter_async_context(mcp_server.session_manager.run())
             try:
                 yield
             finally:
+                if warmup_task is not None:
+                    await warmup_task
                 await application.state.runtime.close()
                 telemetry.shutdown()
 
@@ -235,6 +244,19 @@ def create_app(
             },
         ],
     )
+    if service_settings.cors_allowed_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(service_settings.cors_allowed_origins),
+            allow_credentials=False,
+            allow_methods=["GET", "POST"],
+            allow_headers=[
+                "Accept",
+                "Authorization",
+                "Content-Type",
+                REQUEST_ID_HEADER,
+            ],
+        )
     if service_settings.hf_public_origin is not None:
         public_hostname = urlsplit(service_settings.hf_public_origin).hostname
         if public_hostname is None:  # Configuration validation guarantees this.

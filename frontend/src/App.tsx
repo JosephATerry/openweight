@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/AppShell";
+import { AvailabilityGate } from "./components/AvailabilityGate";
 import { ApprovalProvider } from "./context/ApprovalContext";
 import { DemoPersonaProvider } from "./context/DemoPersonaContext";
 import { AccessRequestsPage } from "./pages/AccessRequestsPage";
@@ -10,7 +11,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { SystemPage } from "./pages/SystemPage";
 
 export function App() {
-  return (
+  const application = (
     <DemoPersonaProvider>
       <ApprovalProvider>
         <AppShell>
@@ -27,4 +28,7 @@ export function App() {
       </ApprovalProvider>
     </DemoPersonaProvider>
   );
+  return import.meta.env.VITE_COLD_START_GATE === "true"
+    ? <AvailabilityGate>{application}</AvailabilityGate>
+    : application;
 }

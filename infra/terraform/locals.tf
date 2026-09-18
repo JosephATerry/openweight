@@ -6,6 +6,7 @@ locals {
   container_apps_subnet_name  = "snet-${local.name_base}-aca"
   postgresql_subnet_name      = "snet-${local.name_base}-postgres"
   container_registry_name     = substr("acr${replace(var.project_name, "-", "")}${replace(var.environment, "-", "")}${var.region_code}${var.unique_suffix}", 0, 50)
+  frontend_storage_name       = substr("st${replace(var.project_name, "-", "")}${replace(var.environment, "-", "")}${var.region_code}${var.unique_suffix}", 0, 24)
   runtime_identity_name       = "id-${local.name_base}-api-${var.region_code}"
   ci_identity_name            = "id-${local.name_base}-ci-${var.region_code}"
   migration_identity_name     = "id-${local.name_base}-migrate-${var.region_code}"

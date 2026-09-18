@@ -771,6 +771,34 @@ def test_azure_deployment_uses_oidc_digest_and_safe_verification_only() -> None:
     assert "terraform apply" not in commands
 
 
+def test_azure_deployment_publishes_static_frontend_with_oidc_and_safe_ordering() -> None:
+    configuration = azure_deploy_workflow()
+    source = read(AZURE_DEPLOY_WORKFLOW_PATH)
+    commands = all_run_commands(configuration)
+    deploy = configuration["jobs"]["deploy"]
+    step_names = [step["name"] for step in deploy["steps"]]
+
+    assert "VITE_API_BASE_URL" in source
+    assert 'VITE_COLD_START_GATE: "true"' in source
+    assert 'VITE_STATIC_HOSTING: "true"' in source
+    assert "preload_demo_embeddings=true" in source
+    assert '--build-arg "OPENWEIGHT_PRELOAD_DEMO_EMBEDDINGS=${preload_demo_embeddings}"' in source
+    assert "az storage blob upload-batch" in commands
+    assert "--pattern 'assets/*'" in commands
+    assert "az storage blob upload" in commands
+    assert "--auth-mode login" in commands
+    assert commands.index("az storage blob upload-batch") < commands.index(
+        "--file frontend/dist/index.html"
+    )
+    assert "storage-account-key" not in source.lower()
+    assert "deployment_token" not in source.lower()
+    assert "AZURE_STORAGE_KEY" not in source
+    assert configuration["permissions"]["id-token"] == "write"
+    assert step_names.index("Wait for the new revision and verify safe endpoints") < step_names.index(
+        "Publish the Azure static frontend with OIDC"
+    )
+
+
 def test_hugging_face_and_azure_deployments_remain_independent() -> None:
     huggingface = read(DEPLOY_WORKFLOW_PATH)
     azure = read(AZURE_DEPLOY_WORKFLOW_PATH)

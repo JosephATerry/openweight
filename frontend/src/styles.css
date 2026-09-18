@@ -224,6 +224,19 @@ svg { width: 1.15em; height: 1.15em; stroke-width: 1.8; }
 .answer-result__meta span { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 999px; color: var(--teal-700); background: var(--teal-100); font-size: 0.65rem; font-weight: 750; text-transform: capitalize; }
 .answer-result--streaming { min-height: 380px; }
 .answer-copy--streaming::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -0.12em; background: var(--teal-600); animation: soft-pulse 1s ease-in-out infinite; }
+
+.availability-gate { min-height: 100vh; display: grid; place-items: center; padding: 2rem; background: var(--surface-canvas, #f4f7f6); }
+.availability-card { width: min(560px, 100%); padding: clamp(1.5rem, 5vw, 3rem); border: 1px solid var(--border-subtle, #d8e1de); border-radius: 24px; background: var(--surface-panel, #fff); box-shadow: 0 24px 70px rgb(20 45 38 / 10%); }
+.availability-card h1 { margin: .35rem 0 .75rem; }
+.availability-steps { display: grid; gap: .85rem; margin: 2rem 0; padding: 0; list-style: none; }
+.availability-step { display: flex; align-items: center; gap: .75rem; color: var(--text-muted, #64736e); }
+.availability-step svg, .availability-dot { width: 1.15rem; height: 1.15rem; flex: 0 0 1.15rem; }
+.availability-step--complete { color: var(--teal-700, #176b5b); }
+.availability-step--active { color: var(--text-strong, #17342d); font-weight: 700; }
+.availability-step--active svg { animation: soft-pulse 1s ease-in-out infinite; }
+.availability-dot { border: 2px solid currentColor; border-radius: 50%; opacity: .35; }
+.availability-error { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle, #d8e1de); }
+.availability-error p { margin: .4rem 0 1rem; }
 .citation-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 17px; }
 .citation-summary > strong { width: 100%; color: var(--ink-600); font-size: 0.67rem; }
 .citation-summary a { display: grid; gap: 3px; max-width: 100%; padding: 9px 11px; border: 1px solid #bddcd3; border-radius: 8px; color: var(--teal-700); background: #f1faf7; text-decoration: none; font-size: 0.72rem; overflow-wrap: anywhere; }
