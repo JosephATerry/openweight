@@ -16,7 +16,7 @@ resource "azurerm_storage_account" "frontend" {
   tags                             = local.common_tags
 }
 
-resource "azapi_resource" "frontend_static_website" {
+resource "azapi_update_resource" "frontend_static_website" {
   type      = "Microsoft.Storage/storageAccounts/blobServices@2025-08-01"
   name      = "default"
   parent_id = azurerm_storage_account.frontend.id
@@ -39,5 +39,5 @@ resource "azurerm_role_assignment" "ci_frontend_upload" {
   principal_type       = "ServicePrincipal"
   description          = "Allow the isolated CI identity to publish only static frontend content."
 
-  depends_on = [azapi_resource.frontend_static_website]
+  depends_on = [azapi_update_resource.frontend_static_website]
 }

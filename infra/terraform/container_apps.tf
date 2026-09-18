@@ -320,7 +320,7 @@ resource "azurerm_container_app" "api" {
     azurerm_role_assignment.runtime_acr_pull,
     azurerm_role_assignment.runtime_key_vault_secrets,
     azurerm_postgresql_flexible_server_configuration.extensions,
-    azapi_resource.frontend_static_website,
+    azapi_update_resource.frontend_static_website,
   ]
 
   lifecycle {
