@@ -11,7 +11,7 @@ production designs. The alternate public recruiter demo is
 | --- | --- | --- | --- |
 | Local full-fidelity demo | Local GPT-OSS 20B on the RTX 3090 | Qwen embeddings, PostgreSQL/pgvector, durable approval and execution records | Configurable JWT/RBAC or explicit local demo mode |
 | Public recruiter demo | `openai/gpt-oss-20b` through one explicit Hugging Face Inference Provider | Verified portable Qwen vector index over `data/policies/*.md`; synthetic process-local access/approval sandbox that resets on restart | Explicit public-demo profile with simulated UI personas |
-| Production reference | External/managed inference behind a configured provider boundary | Managed PostgreSQL/pgvector with durable checkpoints and transactional ledger | OIDC/JWT, managed identities, Key Vault, and Azure observability |
+| Azure production | Hugging Face Inference Providers → Groq → GPT-OSS | Private Azure PostgreSQL/pgvector with durable checkpoints and transactional ledger | OIDC/JWT, managed identities, Key Vault, and Azure observability |
 
 The Space is a product walkthrough, not the production durability reference.
 Its access-request fixtures are synthetic. Proposals still require a separate

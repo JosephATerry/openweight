@@ -9,7 +9,11 @@
 
 ### Live demos
 
-**[Live Azure Demo — primary production deployment](https://ca-owp-demo-api.bravetree-2ecd386c.centralus.azurecontainerapps.io)**
+**[Live Azure Demo — primary production deployment](https://stowpdemocusjat060015f.z19.web.core.windows.net)**
+
+> The Azure AI backend scales to zero when idle. The first visit after
+> inactivity may take about 30 seconds while the backend starts; OpenWeight
+> displays live preparation status during startup.
 
 **[Hugging Face Demo — alternate hosted walkthrough](https://josephaterry-openweight.hf.space)** ·
 [Space page](https://huggingface.co/spaces/josephaterry/openweight)
@@ -157,6 +161,8 @@ explicit production release
     -> Qwen-enabled Linux/amd64 build
     -> immutable digest deployment
     -> Container Apps revision + endpoint verification
+    -> independent React build
+    -> keyless static publication through OIDC/RBAC
 ```
 
 No long-lived Azure CI credential is stored in GitHub. Default and automatic

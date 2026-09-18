@@ -25,6 +25,11 @@ status, latency, backend, operation, fixed tool/action type, approval state,
 dependency, sanitized error class, request ID, trace ID, and span ID. Raw URL
 identifiers are replaced by route templates.
 
+Azure startup emits `policy_encoder_warmup_started`,
+`policy_encoder_warmup_completed`, or `policy_encoder_warmup_failed`. Completion
+and failure include monotonic elapsed time as `latency_ms`; these events contain
+no prompt, retrieved evidence, model output, credential, or user identifier.
+
 ## Prometheus metrics
 
 Metrics are enabled by default at `GET /metrics`. The route is deliberately
