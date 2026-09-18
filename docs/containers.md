@@ -161,8 +161,9 @@ no silent fallback if PostgreSQL durability is selected but unavailable.
   external/local backend; health and metadata endpoints intentionally do not
   load one.
 
-Live enterprise identity-provider registration and Azure provisioning remain
-undeployed. The public Hugging Face profile is deployed with synthetic
-process-local state and bounded inference-specific rate/concurrency controls;
-those demo controls are not a substitute for production identity, durable
+Local Compose does not provision Azure or enterprise identity. The primary
+Azure deployment is live with managed identity and private PostgreSQL; the
+public Hugging Face profile remains an alternate deployment with synthetic
+process-local state and bounded inference-specific rate/concurrency controls.
+Those demo controls are not a substitute for production identity, durable
 storage, or an edge protection strategy.

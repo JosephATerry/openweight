@@ -117,10 +117,13 @@ The small portfolio corpus deliberately uses exact pgvector scanning. The
 indexing lifecycle creates neither HNSW nor IVFFlat; ANN remains a later
 measured optimization.
 
-`/healthz` checks process liveness only. `/readyz` performs bounded,
-read-only checks for configuration, PostgreSQL connectivity, checkpoint and
+`/healthz` checks process liveness only and is also the Container Apps routing
+readiness boundary. `/readyz` performs bounded, read-only checks for the warmed
+Qwen retrieval encoder, configuration, PostgreSQL connectivity, checkpoint and
 approval tables, the vector extension, a nonempty policy index, and presence of
-the HF credential. It does not generate text or embed a query.
+the HF credential. It does not generate text or embed a query. The independent
+React frontend uses these endpoints to distinguish backend startup from deeper
+AI and retrieval preparation before enabling application features.
 
 ## Terraform and first deployment ordering
 

@@ -21,16 +21,19 @@ An optional official MCP Streamable HTTP surface can share this process at
 `/mcp`; it is an interoperability adapter over the same secured runtime, not a
 replacement product API. See [mcp.md](mcp.md).
 
-The service imports and starts without loading a model. The configured backend
-is built and loaded on the first agent or grounded-policy query. FastAPI
-lifespan cleanup closes retrieval resources and unloads an initialized backend.
+The service imports and starts without loading a model. The configured
+generation backend is built and loaded on the first agent or grounded-policy
+query. In the Azure profile, FastAPI schedules a one-time background warm-up of
+the local Qwen retrieval encoder; HTTP liveness is available while that work
+continues, and deep readiness remains false until it succeeds. FastAPI lifespan
+cleanup closes retrieval resources and unloads an initialized backend.
 
 ## Public routes
 
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/healthz` | Process liveness only; performs no dependency probes. |
-| `GET` | `/readyz` | Reports sanitized configuration, backend, PostgreSQL, optional web, and optional MLflow states. Returns 503 when a required dependency is unavailable. |
+| `GET` | `/readyz` | Reports sanitized deep readiness, including the Qwen retrieval encoder, configuration, PostgreSQL/checkpoint/policy-index state, and required provider configuration. Returns 503 when a required dependency is unavailable. |
 | `GET` | `/v1/service-info` | Safe version, environment, build, configured backend alias, and process-local inference initialization state. |
 | `POST` | `/v1/agent/query` | Runs one existing model-routed query and returns a typed, reasoning-free result. |
 | `POST` | `/v1/policy/query` | Retrieves internal policy evidence, generates a grounded answer, validates citations, and returns a typed employee-facing result. |
