@@ -21,6 +21,7 @@ from openweight_platform.api.errors import (
     StateConflictError,
 )
 from openweight_platform.api.logging import SafeJsonFormatter
+from openweight_platform.api.observability import Observability
 from openweight_platform.api.run import main as run_api
 from openweight_platform.api.runtime import (
     AgentExecution,
@@ -275,6 +276,96 @@ def test_readiness_reports_success_and_required_dependency_failure() -> None:
     assert unavailable.status_code == 503
     assert unavailable.json()["status"] == "not_ready"
     assert "password" not in unavailable.text.lower()
+
+
+def test_cors_accepts_only_the_configured_frontend_origin() -> None:
+    settings = service_settings(
+        OPENWEIGHT_CORS_ALLOWED_ORIGINS="https://frontend.example.test",
+    )
+    application = create_app(settings=settings, runtime=FakeRuntime())
+    headers = {
+        "Origin": "https://frontend.example.test",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type,x-request-id",
+    }
+
+    accepted = request(application, "OPTIONS", "/v1/policy/query/stream", headers=headers)
+    rejected = request(
+        application,
+        "OPTIONS",
+        "/v1/policy/query/stream",
+        headers={**headers, "Origin": "https://unknown.example.test"},
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.headers["access-control-allow-origin"] == headers["Origin"]
+    assert accepted.headers.get("access-control-allow-credentials") is None
+    assert rejected.status_code == 400
+    assert "access-control-allow-origin" not in rejected.headers
+    assert "*" not in accepted.headers["access-control-allow-origin"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "*",
+        "https://*.example.test",
+        "https://frontend.example.test/path",
+        "https://user:password@example.test",  # pragma: allowlist secret
+    ),
+)
+def test_cors_configuration_rejects_non_exact_origins(value: str) -> None:
+    with pytest.raises(ValueError, match=r"exact HTTP\(S\) origins"):
+        service_settings(OPENWEIGHT_CORS_ALLOWED_ORIGINS=value)
+
+
+def test_policy_encoder_warmup_is_single_concurrent_and_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = DefaultPlatformRuntime(
+        service_settings(),
+        observability=Observability(
+            service_name="openweight-test",
+            environment="test",
+            metrics_enabled=False,
+            tracing_enabled=False,
+        ),
+    )
+    calls = 0
+
+    def warmup() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(runtime._policy, "warmup", warmup)
+    async def warm_concurrently() -> list[bool]:
+        return await asyncio.gather(
+            runtime.warm_policy_retrieval(),
+            runtime.warm_policy_retrieval(),
+        )
+
+    results = asyncio.run(warm_concurrently())
+
+    assert results == [True, True]
+    assert calls == 1
+    assert runtime._policy_encoder_readiness().status == "ready"
+    assert runtime._backend is None
+
+    failed = DefaultPlatformRuntime(
+        service_settings(),
+        observability=runtime._observability,
+    )
+
+    def fail_warmup() -> None:
+        raise RuntimeError("sensitive model failure")
+
+    monkeypatch.setattr(failed._policy, "warmup", fail_warmup)
+    assert asyncio.run(failed.warm_policy_retrieval()) is False
+    status = failed._policy_encoder_readiness()
+    assert status.status == "unavailable"
+    assert status.detail == "local retrieval encoder unavailable"
+    assert "sensitive" not in status.detail
+    assert failed._backend is None
 
 
 def test_configuration_is_environment_driven_and_secret_repr_is_redacted() -> None:

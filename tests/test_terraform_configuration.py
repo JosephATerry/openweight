@@ -26,6 +26,7 @@ def test_expected_terraform_root_is_complete() -> None:
         "bootstrap_jobs.tf",
         "checks.tf",
         "container_apps.tf",
+        "frontend.tf",
         "identities.tf",
         "key_vault.tf",
         "locals.tf",
@@ -87,6 +88,41 @@ def test_registry_uses_free_account_standard_non_admin_and_pull_only_runtime() -
     assert 'resource "azurerm_role_assignment" "runtime_acr_pull"' in identities
     assert 'resource "azurerm_role_assignment" "ci_acr_push"' in identities
     assert 'role_definition_name = "AcrPush"' in identities
+
+
+def test_static_frontend_is_dedicated_keyless_and_narrowly_publishable() -> None:
+    frontend = _read("frontend.tf")
+    app = _read("container_apps.tf")
+    outputs = _read("outputs.tf")
+
+    assert 'resource "azurerm_storage_account" "frontend"' in frontend
+    assert 'resource "azurerm_storage_account_static_website" "frontend"' in frontend
+    assert 'index_document     = "index.html"' in frontend
+    assert 'shared_access_key_enabled       = false' in frontend
+    assert 'default_to_oauth_authentication = true' in frontend
+    assert 'role_definition_name = "Storage Blob Data Contributor"' in frontend
+    assert '/blobServices/default/containers/$web' in frontend
+    assert "azurerm_user_assigned_identity.ci.principal_id" in frontend
+    assert "primary_access_key" not in frontend.lower()
+    assert "secondary_access_key" not in frontend.lower()
+    assert "listkeys" not in frontend.lower()
+    assert 'name  = "OPENWEIGHT_CORS_ALLOWED_ORIGINS"' in app
+    assert "azurerm_storage_account.frontend.primary_web_endpoint" in app
+    assert "frontend_static_https_origin" in outputs
+    assert "primary_web_endpoint" in outputs
+
+
+def test_static_frontend_does_not_change_backend_scale_to_zero() -> None:
+    variables = _read("variables.tf")
+    app = _read("container_apps.tf")
+
+    assert re.search(
+        r'variable "container_app_min_replicas".*?default\s+=\s+0',
+        variables,
+        flags=re.DOTALL,
+    )
+    assert "min_replicas                     = var.container_app_min_replicas" in app
+    assert 'workload_profile_name        = "Consumption"' in app
 
 
 def test_private_postgresql_network_and_pgvector_intent() -> None:

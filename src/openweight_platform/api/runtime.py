@@ -62,6 +62,7 @@ InferenceState = Literal[
     "available",
     "unavailable",
 ]
+PolicyWarmupState = Literal["not_started", "initializing", "ready", "failed"]
 FORBIDDEN_PUBLIC_KEYS = frozenset(
     {
         "analysis",
@@ -540,35 +541,46 @@ class _LazyPolicyRetriever:
         self._observability = observability
         self._engine: Any | None = None
         self._store: Any | None = None
+        self._embeddings: Any | None = None
+
+    def _ensure_embeddings(self) -> Any:
+        if self._embeddings is None:
+            from openweight_platform.rag.embeddings import QwenEmbeddings
+
+            self._embeddings = QwenEmbeddings(
+                model_id=self._settings.demo_embedding_model,
+                device="cpu",
+            )
+        return self._embeddings
 
     def _ensure_store(self) -> Any:
         if self._settings.deployment_profile == "huggingface":
             if self._store is None:
                 from openweight_platform.rag.portable import PortablePolicyStore
-                from openweight_platform.rag.embeddings import QwenEmbeddings
 
                 self._store = PortablePolicyStore(
                     self._settings.demo_policy_index,
-                    embeddings=QwenEmbeddings(
-                        model_id=self._settings.demo_embedding_model,
-                        device="cpu",
-                    ),
+                    embeddings=self._ensure_embeddings(),
                 )
             return self._store
         if self._settings.database_config is None:
             raise DependencyUnavailableError
         if self._store is None:
-            from openweight_platform.rag.embeddings import QwenEmbeddings
             from openweight_platform.rag.vectorstore import (
                 create_policy_vector_store,
             )
 
             self._engine, self._store = create_policy_vector_store(
                 self._settings.database_config,
-                QwenEmbeddings(model_id=self._settings.demo_embedding_model),
+                self._ensure_embeddings(),
                 initialize=False,
             )
         return self._store
+
+    def warmup(self) -> None:
+        """Load and validate the local query encoder without remote inference."""
+
+        self._ensure_embeddings().embed_query("OpenWeight retrieval readiness")
 
     def validate_portable(self) -> None:
         if self._settings.deployment_profile == "huggingface":
@@ -606,6 +618,7 @@ class _LazyPolicyRetriever:
             self._engine = None
             self._store = None
             await engine.close()
+        self._embeddings = None
 
 
 class _LazyOperationsTools:
@@ -760,6 +773,8 @@ class DefaultPlatformRuntime:
         self._backend_loaded = False
         self._graph: Any | None = None
         self._policy = _LazyPolicyRetriever(settings, observability)
+        self._policy_warmup_state: PolicyWarmupState = "not_started"
+        self._policy_warmup_lock = threading.Lock()
         self._demo_operations: Any | None = None
         if settings.deployment_profile == "huggingface":
             from openweight_platform.operations.demo import DemoOperationsService
@@ -798,6 +813,26 @@ class DefaultPlatformRuntime:
     async def readiness(self) -> list[DependencyStatus]:
         return await asyncio.to_thread(self._readiness)
 
+    async def warm_policy_retrieval(self) -> bool:
+        """Warm the Azure query encoder once without invoking GPT-OSS."""
+
+        return await asyncio.to_thread(self._warm_policy_retrieval)
+
+    def _warm_policy_retrieval(self) -> bool:
+        with self._policy_warmup_lock:
+            if self._policy_warmup_state == "ready":
+                return True
+            if self._policy_warmup_state == "failed":
+                return False
+            self._policy_warmup_state = "initializing"
+            try:
+                self._policy.warmup()
+            except Exception:
+                self._policy_warmup_state = "failed"
+                return False
+            self._policy_warmup_state = "ready"
+            return True
+
     def _readiness(self) -> list[DependencyStatus]:
         configuration_ready = not self._settings.configuration_errors
         states = [
@@ -820,6 +855,7 @@ class DefaultPlatformRuntime:
             if self._settings.checkpoint_backend == "postgres":
                 states.append(self._checkpoint_readiness())
             if self._settings.deployment_profile == "azure":
+                states.append(self._policy_encoder_readiness())
                 states.append(self._policy_index_readiness())
         web_ready = self._settings.web_enabled and self._settings.tavily_configured
         states.append(
@@ -855,6 +891,20 @@ class DefaultPlatformRuntime:
             )
         )
         return states
+
+    def _policy_encoder_readiness(self) -> DependencyStatus:
+        state = self._policy_warmup_state
+        return DependencyStatus(
+            name="retrieval_encoder",
+            status="ready" if state == "ready" else "unavailable",
+            required=True,
+            detail={
+                "not_started": "local retrieval encoder not started",
+                "initializing": "local retrieval encoder initializing",
+                "ready": "local retrieval encoder ready",
+                "failed": "local retrieval encoder unavailable",
+            }[state],
+        )
 
     def _model_backend_readiness(self) -> DependencyStatus:
         if not self._settings.uses_huggingface_inference:

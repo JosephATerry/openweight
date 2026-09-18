@@ -26,6 +26,7 @@ resource "azurerm_container_app" "api" {
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
   max_inactive_revisions       = 3
+  workload_profile_name        = "Consumption"
   tags                         = local.common_tags
 
   identity {
@@ -238,6 +239,11 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
+        name  = "OPENWEIGHT_CORS_ALLOWED_ORIGINS"
+        value = trimsuffix(azurerm_storage_account.frontend.primary_web_endpoint, "/")
+      }
+
+      env {
         name  = "OPENWEIGHT_AUTH_ISSUER"
         value = var.auth_issuer
       }
@@ -314,6 +320,7 @@ resource "azurerm_container_app" "api" {
     azurerm_role_assignment.runtime_acr_pull,
     azurerm_role_assignment.runtime_key_vault_secrets,
     azurerm_postgresql_flexible_server_configuration.extensions,
+    azurerm_storage_account_static_website.frontend,
   ]
 
   lifecycle {

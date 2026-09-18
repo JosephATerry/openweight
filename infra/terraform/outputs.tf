@@ -23,6 +23,16 @@ output "container_app_fqdn" {
   value       = try(azurerm_container_app.api[0].ingress[0].fqdn, null)
 }
 
+output "frontend_storage_account_name" {
+  description = "Storage account hosting the independently available React frontend."
+  value       = azurerm_storage_account.frontend.name
+}
+
+output "frontend_static_https_origin" {
+  description = "Public HTTPS origin of the Azure static frontend."
+  value       = trimsuffix(azurerm_storage_account.frontend.primary_web_endpoint, "/")
+}
+
 output "postgresql_server_fqdn" {
   description = "Private PostgreSQL Flexible Server hostname."
   value       = azurerm_postgresql_flexible_server.main.fqdn

@@ -170,8 +170,11 @@ match the repository configured for federation.
 
 The Environment must define non-secret variables `AZURE_CLIENT_ID`,
 `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`,
-`AZURE_CONTAINER_REGISTRY`, and `AZURE_CONTAINER_APP`. No Azure client secret,
-registry password, database credential, or HF token enters GitHub Actions.
+`AZURE_CONTAINER_REGISTRY`, `AZURE_CONTAINER_APP`,
+`AZURE_FRONTEND_STORAGE_ACCOUNT`, and `AZURE_FRONTEND_URL`. The last two come
+from reviewed Terraform outputs and contain no credential. No Azure client
+secret, storage key, deployment token, registry password, database credential,
+or HF token enters GitHub Actions.
 
 The workflow builds the production image, pushes a source-SHA tag, captures the
 ACR manifest digest from Buildx's trusted push metadata, and updates the single
@@ -217,6 +220,15 @@ Container App update consumes only the immutable Buildx digest. Contradictory
 manual modes fail closed. Automatic releases and all default inputs remain
 model-free, and the manual runtime path does not run migration, indexing,
 Terraform, or database commands.
+
+After the backend revision passes liveness and readiness, the workflow builds
+the independent React site with that backend's public API origin. It uploads
+content-hashed `assets/` first and the no-cache `index.html` last to the
+dedicated `$web` container. Upload authorization is the same short-lived
+GitHub OIDC identity with `Storage Blob Data Contributor` scoped only to
+`$web`; no storage account key or long-lived frontend deployment credential is
+used. A failed publication leaves the previous index and immutable assets in
+place rather than deleting the site.
 
 A separate manual `auth_only` diagnostic job is bound to the same protected
 `azure-production` Environment but does not consult or change either cloud
