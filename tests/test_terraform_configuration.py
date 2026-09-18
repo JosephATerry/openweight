@@ -225,8 +225,8 @@ def test_container_app_uses_identity_safe_probes_and_scale_to_zero() -> None:
     assert app.count('resource "azurerm_container_app"') == 1
     assert "local.application_enabled ? 1 : 0" in app
     assert 'type         = "UserAssigned"' in app
-    assert 'path                    = "/healthz"' in app
-    assert 'path                    = "/readyz"' in app
+    assert app.count('path                    = "/healthz"') == 2
+    assert 'path                    = "/readyz"' not in app
     assert 'name  = "OPENWEIGHT_METRICS_ENABLED"' in app
     assert re.search(r'OPENWEIGHT_METRICS_ENABLED"\s+value = "false"', app)
     assert 'variable "container_app_min_replicas"' in variables

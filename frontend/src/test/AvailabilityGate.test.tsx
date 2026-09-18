@@ -106,6 +106,7 @@ describe("cold-start availability gate", () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (unavailable && url.endsWith("/v1/policy/query")) return Promise.reject(new TypeError("offline"));
+      if (unavailable && url.endsWith("/healthz")) return new Promise<Response>(() => undefined);
       if (url.endsWith("/healthz")) return Promise.resolve(health());
       if (url.endsWith("/readyz")) return Promise.resolve(readiness(true));
       return Promise.resolve(json({ request_id: "list", access_requests: [] }));
@@ -130,16 +131,26 @@ describe("cold-start availability gate", () => {
         controller.close();
       },
     });
-    const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).endsWith("/healthz")
-      ? Promise.resolve(health())
-      : Promise.resolve(new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } })));
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      const url = String(input);
+      if (url.endsWith("/healthz")) return Promise.resolve(health());
+      if (url.endsWith("/readyz")) return Promise.resolve(readiness(true));
+      return Promise.resolve(new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await api.health();
+    await api.readiness();
     await api.streamPolicy("What evidence is required?", {});
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       "https://api.example.test/healthz",
+      "https://api.example.test/readyz",
       "https://api.example.test/v1/policy/query/stream",
     ]);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toBeUndefined();
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toBeUndefined();
+    const streamHeaders = new Headers(fetchMock.mock.calls[2]?.[1]?.headers);
+    expect(streamHeaders.has("X-Request-ID")).toBe(true);
   });
 });

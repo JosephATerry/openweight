@@ -38,7 +38,7 @@ from openweight_platform.api.contracts import (
     ReadinessResponse,
     ServiceInfoResponse,
 )
-from openweight_platform.api.errors import ServiceError
+from openweight_platform.api.errors import DependencyUnavailableError, ServiceError
 from openweight_platform.api.frontend import register_frontend_routes
 from openweight_platform.api.logging import configure_api_logging
 from openweight_platform.api.policy_presentation import (
@@ -470,6 +470,14 @@ def create_app(
 
         return dependency
 
+    async def require_application_ready(request: Request) -> None:
+        dependencies = await get_runtime(request).readiness()
+        if any(
+            dependency.required and dependency.status != "ready"
+            for dependency in dependencies
+        ):
+            raise DependencyUnavailableError
+
     if service_settings.metrics_enabled:
 
         metrics_dependencies = (
@@ -583,7 +591,10 @@ def create_app(
         summary="Execute one guarded agent query",
         response_model=AgentQueryResponse,
         responses={503: {"model": ApiErrorResponse}},
-        dependencies=[Depends(require_permission("agent.query"))],
+        dependencies=[
+            Depends(require_permission("agent.query")),
+            Depends(require_application_ready),
+        ],
     )
     async def execute_query(
         body: AgentQueryRequest,
@@ -633,7 +644,10 @@ def create_app(
         summary="Answer one question from internal policy evidence",
         response_model=PolicyQueryResponse,
         responses={503: {"model": ApiErrorResponse}},
-        dependencies=[Depends(require_permission("agent.query"))],
+        dependencies=[
+            Depends(require_permission("agent.query")),
+            Depends(require_application_ready),
+        ],
     )
     async def query_policy(
         body: PolicyQueryRequest,
@@ -680,7 +694,10 @@ def create_app(
         tags=["policy"],
         summary="Stream one answer grounded in internal policy evidence",
         response_class=StreamingResponse,
-        dependencies=[Depends(require_permission("agent.query"))],
+        dependencies=[
+            Depends(require_permission("agent.query")),
+            Depends(require_application_ready),
+        ],
     )
     async def stream_policy_query(
         body: PolicyQueryRequest,
@@ -785,7 +802,10 @@ def create_app(
         summary="List fictional access requests",
         response_model=AccessRequestListResponse,
         responses={503: {"model": ApiErrorResponse}},
-        dependencies=[Depends(require_permission("agent.query"))],
+        dependencies=[
+            Depends(require_permission("agent.query")),
+            Depends(require_application_ready),
+        ],
     )
     async def list_access_requests(
         request: Request,
@@ -818,7 +838,10 @@ def create_app(
             404: {"model": ApiErrorResponse},
             503: {"model": ApiErrorResponse},
         },
-        dependencies=[Depends(require_permission("agent.query"))],
+        dependencies=[
+            Depends(require_permission("agent.query")),
+            Depends(require_application_ready),
+        ],
     )
     async def get_access_request(
         access_request_id: str,
@@ -849,7 +872,10 @@ def create_app(
             409: {"model": ApiErrorResponse},
             503: {"model": ApiErrorResponse},
         },
-        dependencies=[Depends(require_permission("actions.propose"))],
+        dependencies=[
+            Depends(require_permission("actions.propose")),
+            Depends(require_application_ready),
+        ],
     )
     async def propose_access_request_status(
         access_request_id: str,
@@ -907,7 +933,10 @@ def create_app(
             409: {"model": ApiErrorResponse},
             503: {"model": ApiErrorResponse},
         },
-        dependencies=[Depends(require_permission("approvals.resume"))],
+        dependencies=[
+            Depends(require_permission("approvals.resume")),
+            Depends(require_application_ready),
+        ],
     )
     async def resume_approval(
         approval_id: str,

@@ -306,7 +306,7 @@ resource "azurerm_container_app" "api" {
       readiness_probe {
         transport               = "HTTP"
         port                    = var.container_port
-        path                    = "/readyz"
+        path                    = "/healthz"
         initial_delay           = 10
         interval_seconds        = 15
         timeout                 = 5

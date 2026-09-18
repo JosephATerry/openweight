@@ -278,6 +278,39 @@ def test_readiness_reports_success_and_required_dependency_failure() -> None:
     assert "password" not in unavailable.text.lower()
 
 
+def test_runtime_operations_fail_closed_until_required_dependencies_are_ready() -> None:
+    runtime = FakeRuntime()
+    runtime.dependencies = [
+        DependencyStatus(
+            name="retrieval_encoder",
+            status="unavailable",
+            required=True,
+            detail="local retrieval encoder initializing",
+        )
+    ]
+    application = app_for(runtime)
+
+    policy = request(
+        application,
+        "POST",
+        "/v1/policy/query",
+        json={"question": "What controls privileged access?"},
+    )
+    proposal = request(
+        application,
+        "POST",
+        "/v1/actions/access-requests/req-1/proposals",
+        json={"new_status": "approved"},
+    )
+
+    assert policy.status_code == 503
+    assert proposal.status_code == 503
+    assert policy.json()["error"]["code"] == "dependency_unavailable"
+    assert proposal.json()["error"]["code"] == "dependency_unavailable"
+    assert runtime.request_ids == []
+    assert runtime.resumes == []
+
+
 def test_cors_accepts_only_the_configured_frontend_origin() -> None:
     settings = service_settings(
         OPENWEIGHT_CORS_ALLOWED_ORIGINS="https://frontend.example.test",
@@ -322,6 +355,15 @@ def test_cors_configuration_rejects_non_exact_origins(value: str) -> None:
 def test_policy_encoder_warmup_is_single_concurrent_and_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def record_event(event: str, *, extra: dict[str, object]) -> None:
+        events.append((event, extra))
+
+    monkeypatch.setattr(
+        "openweight_platform.api.runtime.POLICY_WARMUP_LOGGER.info",
+        record_event,
+    )
     runtime = DefaultPlatformRuntime(
         service_settings(),
         observability=Observability(
@@ -366,6 +408,15 @@ def test_policy_encoder_warmup_is_single_concurrent_and_fail_closed(
     assert status.detail == "local retrieval encoder unavailable"
     assert "sensitive" not in status.detail
     assert failed._backend is None
+    assert [event for event, _extra in events] == [
+        "policy_encoder_warmup_started",
+        "policy_encoder_warmup_completed",
+        "policy_encoder_warmup_started",
+        "policy_encoder_warmup_failed",
+    ]
+    assert all(set(extra) <= {"dependency", "result", "latency_ms"} for _, extra in events)
+    assert all(extra["dependency"] == "retrieval_encoder" for _, extra in events)
+    assert "sensitive" not in json.dumps(events)
 
 
 def test_configuration_is_environment_driven_and_secret_repr_is_redacted() -> None:
