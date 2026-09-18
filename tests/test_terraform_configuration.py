@@ -96,8 +96,13 @@ def test_static_frontend_is_dedicated_keyless_and_narrowly_publishable() -> None
     outputs = _read("outputs.tf")
 
     assert 'resource "azurerm_storage_account" "frontend"' in frontend
-    assert 'resource "azurerm_storage_account_static_website" "frontend"' in frontend
-    assert 'index_document     = "index.html"' in frontend
+    assert 'resource "azapi_resource" "frontend_static_website"' in frontend
+    assert 'type      = "Microsoft.Storage/storageAccounts/blobServices@2025-08-01"' in frontend
+    assert "parent_id = azurerm_storage_account.frontend.id" in frontend
+    assert "staticWebsite" in frontend
+    assert "enabled              = true" in frontend
+    assert 'indexDocument        = "index.html"' in frontend
+    assert 'errorDocument404Path = "index.html"' in frontend
     assert re.search(
         r"^\s*shared_access_key_enabled\s*=\s*false\s*$",
         frontend,
@@ -114,6 +119,7 @@ def test_static_frontend_is_dedicated_keyless_and_narrowly_publishable() -> None
     assert "primary_access_key" not in frontend.lower()
     assert "secondary_access_key" not in frontend.lower()
     assert "listkeys" not in frontend.lower()
+    assert "azapi_resource.frontend_static_website" in frontend
     assert 'name  = "OPENWEIGHT_CORS_ALLOWED_ORIGINS"' in app
     assert "azurerm_storage_account.frontend.primary_web_endpoint" in app
     assert "frontend_static_https_origin" in outputs

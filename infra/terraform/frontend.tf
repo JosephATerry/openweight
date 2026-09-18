@@ -16,10 +16,20 @@ resource "azurerm_storage_account" "frontend" {
   tags                             = local.common_tags
 }
 
-resource "azurerm_storage_account_static_website" "frontend" {
-  storage_account_id = azurerm_storage_account.frontend.id
-  index_document     = "index.html"
-  error_404_document = "index.html"
+resource "azapi_resource" "frontend_static_website" {
+  type      = "Microsoft.Storage/storageAccounts/blobServices@2025-08-01"
+  name      = "default"
+  parent_id = azurerm_storage_account.frontend.id
+
+  body = {
+    properties = {
+      staticWebsite = {
+        enabled              = true
+        indexDocument        = "index.html"
+        errorDocument404Path = "index.html"
+      }
+    }
+  }
 }
 
 resource "azurerm_role_assignment" "ci_frontend_upload" {
@@ -29,5 +39,5 @@ resource "azurerm_role_assignment" "ci_frontend_upload" {
   principal_type       = "ServicePrincipal"
   description          = "Allow the isolated CI identity to publish only static frontend content."
 
-  depends_on = [azurerm_storage_account_static_website.frontend]
+  depends_on = [azapi_resource.frontend_static_website]
 }
