@@ -98,8 +98,16 @@ def test_static_frontend_is_dedicated_keyless_and_narrowly_publishable() -> None
     assert 'resource "azurerm_storage_account" "frontend"' in frontend
     assert 'resource "azurerm_storage_account_static_website" "frontend"' in frontend
     assert 'index_document     = "index.html"' in frontend
-    assert 'shared_access_key_enabled       = false' in frontend
-    assert 'default_to_oauth_authentication = true' in frontend
+    assert re.search(
+        r"^\s*shared_access_key_enabled\s*=\s*false\s*$",
+        frontend,
+        flags=re.MULTILINE,
+    )
+    assert re.search(
+        r"^\s*default_to_oauth_authentication\s*=\s*true\s*$",
+        frontend,
+        flags=re.MULTILINE,
+    )
     assert 'role_definition_name = "Storage Blob Data Contributor"' in frontend
     assert '/blobServices/default/containers/$web' in frontend
     assert "azurerm_user_assigned_identity.ci.principal_id" in frontend
